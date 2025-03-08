@@ -50,6 +50,7 @@ class bsp_texture_info:
     u_axis: bsp_vertex
     u_offset: float
     v_axis: bsp_vertex
+    v_offset: float
 
     flags: int
     value: int
@@ -163,9 +164,13 @@ class bsp_header:
 
 
 class BSP_OBJECT(object):
+    folder_path = ""
+    name = ""
     obj = {}
     mesh = {}
     header = {}
     vertices = list()
     edges = list()
     faces = list()
+    textures = list()
+    texture_path_dict = dict()

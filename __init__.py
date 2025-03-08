@@ -1,11 +1,11 @@
 bl_info = {
-    "name": "Quake II/Anachronox BSP Importer",
+    "name": "idTech 2 BSP Importer",
     "author": "GeneralProtectionFault",
-    "version": (0,0,1),
+    "version": (0,0,5),
     "blender": (4,4,0),
-    "location": "File > Import > Quake II/Anachronox (.BSP)",
+    "location": "File > Import > idTech 2 [Quake II/Anachronox] (.BSP)",
     "warning": "",
-    # "github_url": "https://github.com/GeneralProtectionFault/blender-anachronox-md2-importer",
+    "github_url": "https://github.com/GeneralProtectionFault/idTech-2-BSP-Blender-Importer",
     "doc_url": ""
 }
 
@@ -35,7 +35,7 @@ class ImportBSP(bpy.types.Operator, ImportHelper):
 
 
 def menu_func_import(self, context):
-    self.layout.operator(ImportBSP.bl_idname, text="Quake II/Anachronox BSP Import (.bsp)")
+    self.layout.operator(ImportBSP.bl_idname, text="idTech 2 [Quake II/Anachronox] (.BSP)")
 
 
 classes = [

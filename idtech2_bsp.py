@@ -124,29 +124,60 @@ def get_face_vertices(bytes):
         for i in range(f.first_edge, f.first_edge + f.num_edges):
             print(f"face edge idx: {i}")
             # Get actual edge index from face-edge array
-
-            # print(f"Getting edge_idx from face-edge array.  Bytes {BSP_OBJECT.header.face_edge_table_offset+(4*i)} through {BSP_OBJECT.header.face_edge_table_offset+(4*i)+4}")
-            # edge_idx_orig = struct.unpack("<I", bytes[BSP_OBJECT.header.face_edge_table_offset+(4*i) : BSP_OBJECT.header.face_edge_table_offset+(4*i)+4])[0]
             edge_idx = struct.unpack("<i", bytes[BSP_OBJECT.header.face_edge_table_offset + (i*4) : BSP_OBJECT.header.face_edge_table_offset + (i*4) + 4])[0]
             if edge_idx < 0:
                 negative_flag = True
             print(f"Edge index: {edge_idx}")
-            # Negative number indicates drawing the edge from the 2nd point, but who cares?  This ain' OpenGL :)
             this_edge = BSP_OBJECT.edges[abs(edge_idx)]
-            # print(f"FACE EDGE index: {face_edge_idx}")
             
+            # Negative number indicates drawing the edge from the 2nd point instead of the 1st
             if edge_idx < 0:
                 face_vert_list.extend(list(reversed(this_edge)))
             else:
                 face_vert_list.extend(this_edge)
-            # for vert_idx in this_edge:     
-                # if not vert_idx in face_vert_list:
-                    # face_vert_list.append(vert_idx)
-
 
         faces_by_verts.append(face_vert_list)
     return faces_by_verts
 
+
+
+def load_textures(bytes):
+    num_textures = len(bytes) / 76
+    all_textures = list()
+    for i in range(int(num_textures)):
+        unpacked_bytes = list(struct.unpack(f"<{'f'*8}II{'c'*32}i", bytes[76*i : 76*i+76]))
+        texture_info = bsp_texture_info(
+            u_axis = unpacked_bytes[0:2],
+            u_offset = unpacked_bytes[3],
+            v_axis = unpacked_bytes[4:6],
+            v_offset = unpacked_bytes[7],
+            flags = unpacked_bytes[8],
+            value = unpacked_bytes[9],
+            texture_name = b''.join([byte for byte in unpacked_bytes[10:41] if byte != b'\x00']).decode('utf-8'),
+            next_texinfo = unpacked_bytes[42]
+        )
+        all_textures.append(texture_info)
+    return all_textures
+
+
+
+def get_textures():
+    for t in BSP_OBJECT.textures:
+        print(f"Searching for texture: {t.texture_name}")
+        texture_path = os.path.join(BSP_OBJECT.folder_path, *t.texture_name.split('/'))
+        if os.path.isfile(texture_path):
+            BSP_OBJECT.texture_path_dict[t.texture_name] = texture_path
+
+
+def map_texture_and_uv():
+    # Texture coordinates....
+    # Probably create a dictionary of faces to texture, or just use the face objects that have texture_info anyway...
+
+
+
+    uv_layer = BSP_OBJECT.mesh.uv_layers.new()
+    BSP_OBJECT.uv_layers.active = uv_layer
+    
 
 def load_idtech2_bsp(bsp_path):
     if not os.path.isfile(bsp_path):
@@ -156,18 +187,23 @@ def load_idtech2_bsp(bsp_path):
     print("Loading idtech2 .bsp...")
     try:
         file_bytes = load_file(bsp_path)
+        BSP_OBJECT.folder_path = os.path.dirname(bsp_path)
 
         # Create the mesh
         filename = os.path.basename(bsp_path)
         object_name = filename.split('.')[0]        # trim off the .bsp extension
 
         print(f"Creating mesh: {object_name}")
+        BSP_OBJECT.name = object_name
         BSP_OBJECT.mesh = bpy.data.meshes.new(object_name)
         BSP_OBJECT.obj = bpy.data.objects.new(object_name, BSP_OBJECT.mesh)
 
         BSP_OBJECT.vertices = load_verts(file_bytes[BSP_OBJECT.header.vertices_offset : BSP_OBJECT.header.vertices_offset+BSP_OBJECT.header.vertices_length])
         BSP_OBJECT.edges = load_edges(file_bytes[BSP_OBJECT.header.edge_offset : BSP_OBJECT.header.edge_offset+BSP_OBJECT.header.edge_length])
         BSP_OBJECT.faces = load_faces(file_bytes[BSP_OBJECT.header.faces_offset : BSP_OBJECT.header.faces_offset+BSP_OBJECT.header.faces_length])
+
+        BSP_OBJECT.textures = load_textures(file_bytes[BSP_OBJECT.header.texture_info_offset : BSP_OBJECT.header.texture_info_offset+BSP_OBJECT.header.texture_info_length])
+        get_textures()
 
         faces_by_verts = get_face_vertices(file_bytes)
         BSP_OBJECT.mesh.from_pydata(BSP_OBJECT.vertices, BSP_OBJECT.edges, faces_by_verts)
