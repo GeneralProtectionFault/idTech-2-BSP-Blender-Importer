@@ -7,6 +7,7 @@ import sys
 import subprocess
 import stat
 from .types import *
+from .utils import *
 from importlib import reload # required when a self-written module is imported that's edited simultaneously
 
 
@@ -118,16 +119,14 @@ def load_faces(bytes):
 def get_face_vertices(bytes):
     faces_by_verts = list()
     for idx, f in enumerate(BSP_OBJECT.faces):
-        print(f"Face {idx}: {f}")
-        face_vert_list = list()
         
+        face_vert_list = list()
         for i in range(f.first_edge, f.first_edge + f.num_edges):
-            print(f"face edge idx: {i}")
             # Get actual edge index from face-edge array
             edge_idx = struct.unpack("<i", bytes[BSP_OBJECT.header.face_edge_table_offset + (i*4) : BSP_OBJECT.header.face_edge_table_offset + (i*4) + 4])[0]
             if edge_idx < 0:
                 negative_flag = True
-            print(f"Edge index: {edge_idx}")
+            
             this_edge = BSP_OBJECT.edges[abs(edge_idx)]
             
             # Negative number indicates drawing the edge from the 2nd point instead of the 1st
@@ -162,12 +161,16 @@ def load_textures(bytes):
 
 
 def get_textures():
-    for t in BSP_OBJECT.textures:
-        print(f"Searching for texture: {t.texture_name}")
-        texture_path = os.path.join(BSP_OBJECT.folder_path, *t.texture_name.split('/'))
-        if os.path.isfile(texture_path):
-            BSP_OBJECT.texture_path_dict[t.texture_name] = texture_path
-
+    for i, t in enumerate(BSP_OBJECT.textures):
+        valid_extensions = ['.tga','.png','.bmp']
+        texture_base_path = os.path.join(BSP_OBJECT.folder_path, *t.texture_name.split('/'))
+        potential_texture_paths = [f"{texture_base_path}{ext}" for ext in valid_extensions]
+        
+        actual_texture_path = getfile_insensitive_from_list(potential_texture_paths)
+        if actual_texture_path:
+            BSP_OBJECT.texture_path_dict[t.texture_name] = actual_texture_path
+        else:
+            print(f"ERROR: {t.texture_name}, index {i} not found at path:\n{texture_base_path}")
 
 def map_texture_and_uv():
     # Texture coordinates....
