@@ -268,16 +268,16 @@ def create_uvs():
                 # Normalize
                 vert_vector = BSP_OBJECT.vertices[vert_idx]
 
-                # x = vert_vector.x
-                # y = vert_vector.y
-                # z = vert_vector.z
+                x = vert_vector.x
+                y = vert_vector.y
+                z = vert_vector.z
 
                 n_vector = normalize_vector([vert_vector.x, vert_vector.y, vert_vector.z])
                 # print(f"Normalized Vector: {n_vector}")
                 # print(f"u_axis: {texture.u_axis}, v_axis: {texture.v_axis}")
-                x = n_vector[0]
-                y = n_vector[1]
-                z = n_vector[2]
+                # x = n_vector[0]
+                # y = n_vector[1]
+                # z = n_vector[2]
 
                 bsp_u = x * texture.u_axis[0] + y * texture.u_axis[1] + z * texture.u_axis[2] + texture.u_offset
                 bsp_v = x * texture.v_axis[0] + y * texture.v_axis[1] + z * texture.v_axis[2] + texture.v_offset
