@@ -1,5 +1,6 @@
 import os
 import glob
+import math
 
 paths = [
     '/home/q/ART/Anachronox/BSPs/ballotine/Girder05.tga'
@@ -45,3 +46,10 @@ def getfile_insensitive_from_list(potential_paths):
             return built_path
     return None  # Return None if no valid path is found
 
+
+def normalize_vector(vector):
+    # Calculate the magnitude (length) of the vector
+    magnitude = math.sqrt(vector[0]**2 + vector[1]**2 + vector[2]**2)
+    # Normalize the vector by dividing each component by the magnitude
+    normalized_vector = [vector[0] / magnitude, vector[1] / magnitude, vector[2] / magnitude]
+    return normalized_vector

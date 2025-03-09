@@ -181,17 +181,13 @@ def load_textures(bytes):
 
 def create_materials():
     distinct_texture_names = {tex.texture_name for tex in BSP_OBJECT.textures}
-    for t in distinct_texture_names:
+    for i, t in enumerate(distinct_texture_names):
         try:
             material_name = f"M_{t}"
 
             # Create the material
             mat = bpy.data.materials.new(name = material_name)
             
-            # Keep track of the material index for this texture name
-            # Later, it will be used to associate w/ the faces
-            BSP_OBJECT.texture_material_index_dict[t] = bpy.data.materials.find(mat.name)
-
             mat.use_nodes = True
             # Create the shader node
             bsdf = mat.node_tree.nodes['Principled BSDF']
@@ -208,6 +204,11 @@ def create_materials():
 
             # Add the new material to the mesh/object
             BSP_OBJECT.obj.data.materials.append(mat)
+
+            # Keep track of the material index for this texture name
+            # Later, it will be used to associate w/ the faces
+            # BSP_OBJECT.texture_material_index_dict[t] = bpy.data.materials.find(mat.name)
+            BSP_OBJECT.texture_material_index_dict[t] = i
         except Exception as e:
             print(f"ERROR creating material for texture: {t}")
 
@@ -216,22 +217,36 @@ def create_materials():
 def assign_materials():
     bpy.context.tool_settings.mesh_select_mode = [False, False, True]
 
+    # for material_idx, material in enumerate(BSP_OBJECT.obj.data.materials):
+    #     bpy.context.object.active_material_index = material_idx
+
+    #     bpy.ops.object.mode_set(mode = 'EDIT')
+    #     bpy.ops.mesh.select_all(action = 'DESELECT')
+
+    #     bpy.ops.object.mode_set(mode = 'OBJECT')
+    #     for face_idx, face in enumerate(BSP_OBJECT.mesh.polygons):      # MAYBE NOT THE SAME ORDER AFTER ALL, POOP #
+    #         texture_idx = BSP_OBJECT.faces[face_idx].texture_info
+    #         texture_name = BSP_OBJECT.textures[texture_idx].texture_name
+    #         # material_idx = BSP_OBJECT.texture_material_index_dict[texture_name]
+    #         found_material_idx = bpy.data.materials.find(f"M_{texture_name}")
+    #         # print(f"M_{texture_name} returned material index {found_material_idx}")
+
+    #         if material_idx == found_material_idx:
+    #             face.material_index = bpy.context.object.active_material_index
+
     for material_idx, material in enumerate(BSP_OBJECT.obj.data.materials):
-        bpy.context.object.active_material_index = material_idx
 
-        # bpy.ops.object.mode_set(mode = 'EDIT')
-        # bpy.ops.mesh.select_all(action = 'DESELECT')
-
-        bpy.ops.object.mode_set(mode = 'OBJECT')
-        for face_idx, face in enumerate(BSP_OBJECT.mesh.polygons):
-            texture_idx = BSP_OBJECT.faces[face_idx].texture_info
+        for face in BSP_OBJECT.mesh.polygons:      # MAYBE NOT THE SAME ORDER AFTER ALL, POOP #
+            texture_idx = BSP_OBJECT.faces[face.index].texture_info
             texture_name = BSP_OBJECT.textures[texture_idx].texture_name
-            material_idx = BSP_OBJECT.texture_material_index_dict[texture_name]
+            found_material_idx = BSP_OBJECT.texture_material_index_dict[texture_name]
+            
+            face.material_index = found_material_idx
 
-            face.material_index = material_idx
 
-    bpy.ops.object.mode_set(mode = 'OBJECT')
-    bpy.ops.object.origin_set(type='ORIGIN_GEOMETRY')
+
+    # bpy.ops.object.mode_set(mode = 'OBJECT')
+    # bpy.ops.object.origin_set(type='ORIGIN_GEOMETRY')
 
 
 
@@ -250,22 +265,34 @@ def create_uvs():
         for idx, (vert_idx, loop_idx) in enumerate(zip(face.vertices, face.loop_indices)):
             for vert_idx in BSP_OBJECT.face_vert_dict[face_idx]:
                 texture = BSP_OBJECT.vert_texture_dict[vert_idx]
-                x, y, z = BSP_OBJECT.vertices[vert_idx]
+                # Normalize
+                vert_vector = BSP_OBJECT.vertices[vert_idx]
+
+                x = vert_vector.x
+                y = vert_vector.y
+                z = vert_vector.z
+
+                n_vector = normalize_vector([vert_vector.x, vert_vector.y, vert_vector.z])
+                # print(f"Normalized Vector: {n_vector}")
+                # x = n_vector[0]
+                # y = n_vector[1]
+                # z = n_vector[2]
 
                 bsp_u = x * texture.u_axis[0] + y * texture.u_axis[1] + z * texture.u_axis[2] + texture.u_offset
                 bsp_v = x * texture.v_axis[0] + y * texture.v_axis[1] + z * texture.v_axis[2] + texture.v_offset
 
-                print(f"X: {x}, Y: {y}, Z: {z}")
-                print(f"u_axis.x: {texture.u_axis[0]}, u_axis.y: {texture.u_axis[1]}, u_axis.z: {texture.u_axis[2]}")
-                print(f"v_axis.x: {texture.v_axis[0]}, v_axis.y: {texture.v_axis[1]}, v_axis.z: {texture.v_axis[2]}")
-                # bsp_u = x * texture.u_axis[0] + texture.u_offset
-                # bsp_v = y * texture.v_axis[0] + texture.v_offset
+                # print(f"X: {x}, Y: {y}, Z: {z}")
+                # print(f"u_axis.x: {texture.u_axis[0]}, u_axis.y: {texture.u_axis[1]}, u_axis.z: {texture.u_axis[2]}")
+                # print(f"v_axis.x: {texture.v_axis[0]}, v_axis.y: {texture.v_axis[1]}, v_axis.z: {texture.v_axis[2]}")
 
                 try:
                     texture_res = BSP_OBJECT.texture_resolution_dict[texture.texture_name]
                     
-                    u = bsp_u / texture_res[0] / 100
-                    v = (1- bsp_v / texture_res[1]) / 100
+                    u = bsp_u / texture_res[0]
+                    v = (1- bsp_v / texture_res[1])
+
+                    # u = bsp_u
+                    # v = bsp_v
 
                     # Logging/debugging
                     min_u = min(min_u, u)
@@ -289,13 +316,30 @@ def create_uvs():
     for t in skipped_textures:
         print(f'Skipped "texture": {t}')
 
-def get_textures():
+
+
+def get_texture_images():
+    # TODO: Add .WAL support
+    valid_extensions = ['.tga','.png','.bmp','.jpg']
+    file_paths = []
+    for root, dirs, files in os.walk(BSP_OBJECT.folder_path):
+        for file in files:
+            if any(file.endswith(ext.casefold()) for ext in valid_extensions):
+                file_paths.append(os.path.join(root, file))
+
+    file_paths_map = {file_path.casefold(): file_path for file_path in file_paths}
+
     for i, t in enumerate(BSP_OBJECT.textures):
-        valid_extensions = ['.tga','.png','.bmp']
         texture_base_path = os.path.join(BSP_OBJECT.folder_path, *t.texture_name.split('/'))
-        potential_texture_paths = [f"{texture_base_path}{ext}" for ext in valid_extensions]
-        
-        actual_texture_path = getfile_insensitive_from_list(potential_texture_paths)
+        # potential_texture_paths = [f"{texture_base_path}{ext}" for ext in valid_extensions]
+        # actual_texture_path = getfile_insensitive_from_list(potential_texture_paths)
+
+        texture_name_casefold = t.texture_name.casefold()
+        for casefolded_path, original_path in file_paths_map.items():
+            if texture_name_casefold in casefolded_path:
+                actual_texture_path = original_path
+                break  # Stop checking other paths for this texture
+
         if actual_texture_path:
             BSP_OBJECT.texture_path_dict[t.texture_name] = actual_texture_path
             # Get resolution of texture
@@ -304,6 +348,8 @@ def get_textures():
                     BSP_OBJECT.texture_resolution_dict[t.texture_name] = img.size # x, y
             except Exception as e:
                 print(f"Unable to open texture file (may be .atd, etc...): {t.texture_name}")
+                print(f"Attempted path: {actual_texture_path}")
+                print(f'Exception: {e}')
         else:
             print(f"ERROR: {t.texture_name}, index {i} not found at path:\n{texture_base_path}")
 
@@ -333,7 +379,7 @@ def load_idtech2_bsp(bsp_path):
         BSP_OBJECT.textures = load_textures(file_bytes[BSP_OBJECT.header.texture_info_offset : BSP_OBJECT.header.texture_info_offset+BSP_OBJECT.header.texture_info_length])
         BSP_OBJECT.faces = load_faces(file_bytes[BSP_OBJECT.header.faces_offset : BSP_OBJECT.header.faces_offset+BSP_OBJECT.header.faces_length])
 
-        get_textures()
+        get_texture_images()
 
         faces_by_verts = get_face_and_texture_vertices(file_bytes)
         BSP_OBJECT.mesh.from_pydata(BSP_OBJECT.vertices, BSP_OBJECT.edges, faces_by_verts)

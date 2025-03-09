@@ -35,6 +35,7 @@ class bsp_edge:
         return reversed([self.vert_idx_1, self.vert_idx_2])
 
 
+
 @dataclass
 class bsp_vertex:
     x: float
@@ -53,6 +54,9 @@ class bsp_vertex:
         return (self.x == other.x and
                 self.y == other.y and
                 self.z == other.z)
+
+    def __getitem__(self, key):
+        return getattr(self, key)
 
 
 @dataclass
