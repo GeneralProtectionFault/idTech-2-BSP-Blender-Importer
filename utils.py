@@ -28,6 +28,7 @@ def getfile_insensitive_from_list(potential_paths):
     path_dict = {path.casefold(): path for path in potential_paths}
     
     for path in potential_paths:
+        
         if os.path.isfile(path):
             # print(f"Original path found: {path}")
             return path
@@ -35,7 +36,7 @@ def getfile_insensitive_from_list(potential_paths):
             split_path = split_path_all_parts(path)
             built_path = ''
             for part in split_path:
-                if os.path.exists(part):
+                if os.path.exists(part):    # just the 1st part
                     built_path = os.path.join(built_path, part)
                 elif os.path.exists(os.path.join(built_path, part)):
                     built_path = os.path.join(built_path, part)

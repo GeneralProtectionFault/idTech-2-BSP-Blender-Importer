@@ -1,5 +1,5 @@
 from dataclasses import dataclass, fields
-from typing import List
+from typing import List, Any
 
 
 
@@ -44,6 +44,16 @@ class bsp_vertex:
     def __iter__(self):
         return (getattr(self, field.name) for field in fields(self))
 
+    def __hash__(self):
+        return hash((self.x, self.y, self.z))
+
+    def __eq__(self, other: Any) -> bool:
+        if not isinstance(other, bsp_vertex):
+            return False
+        return (self.x == other.x and
+                self.y == other.y and
+                self.z == other.z)
+
 
 @dataclass
 class bsp_texture_info:
@@ -57,6 +67,25 @@ class bsp_texture_info:
 
     texture_name: str
     next_texinfo: int
+
+    def __iter__(self):
+        return (getattr(self, field.name) for field in fields(self))
+
+    def __hash__(self):
+        return hash((self.u_axis, self.u_offset, self.v_axis, self.v_offset, self.flags, self.value, self.texture_name, self.next_texinfo))
+
+    def __eq__(self, other: Any) -> bool:
+        if not isinstance(other, bsp_texture_info):
+            return False
+        return (self.u_axis == other.u_axis and
+                self.u_offset == other.u_offset and
+                self.v_axis == other.v_axis and
+                self.v_offset == other.v_offset and
+                self.flags == other.flags and
+                self.value == other.value and
+                self.texture_name == other.texture_name and
+                self.next_texinfo == other.next_texinfo)
+
 
 
 ########## "Logical"/BSP tree objects ############
@@ -173,4 +202,11 @@ class BSP_OBJECT(object):
     edges = list()
     faces = list()
     textures = list()
+
+    vert_texture_dict = dict()
+    
+    face_vert_dict = dict()
     texture_path_dict = dict()
+    material_texture_dict = dict()
+    texture_material_index_dict = dict()
+    texture_resolution_dict = dict()
