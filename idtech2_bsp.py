@@ -234,19 +234,16 @@ def assign_materials():
     #         if material_idx == found_material_idx:
     #             face.material_index = bpy.context.object.active_material_index
 
-    for material_idx, material in enumerate(BSP_OBJECT.obj.data.materials):
+    # bpy.ops.object.mode_set(mode = 'OBJECT')
+    # bpy.ops.object.origin_set(type='ORIGIN_GEOMETRY')
 
-        for face in BSP_OBJECT.mesh.polygons:      # MAYBE NOT THE SAME ORDER AFTER ALL, POOP #
+    for material in BSP_OBJECT.obj.data.materials:
+        for face in BSP_OBJECT.mesh.polygons:
             texture_idx = BSP_OBJECT.faces[face.index].texture_info
             texture_name = BSP_OBJECT.textures[texture_idx].texture_name
             found_material_idx = BSP_OBJECT.texture_material_index_dict[texture_name]
             
             face.material_index = found_material_idx
-
-
-
-    # bpy.ops.object.mode_set(mode = 'OBJECT')
-    # bpy.ops.object.origin_set(type='ORIGIN_GEOMETRY')
 
 
 
@@ -261,22 +258,26 @@ def create_uvs():
 
     # Hopefully only non-image files that match the name of supposed textures...
     skipped_textures = list()
-    for face_idx, face in enumerate(BSP_OBJECT.mesh.polygons):
-        for idx, (vert_idx, loop_idx) in enumerate(zip(face.vertices, face.loop_indices)):
-            for vert_idx in BSP_OBJECT.face_vert_dict[face_idx]:
+
+    for face in BSP_OBJECT.mesh.polygons:
+        # for idx, (vert_idx, loop_idx) in enumerate(zip(face.vertices, face.loop_indices)):
+        #     for vert_idx in BSP_OBJECT.face_vert_dict[face.index]:
+        for loop_idx in face.loop_indices:
+                vert_idx = BSP_OBJECT.obj.data.loops[loop_idx].vertex_index
                 texture = BSP_OBJECT.vert_texture_dict[vert_idx]
                 # Normalize
                 vert_vector = BSP_OBJECT.vertices[vert_idx]
 
-                x = vert_vector.x
-                y = vert_vector.y
-                z = vert_vector.z
+                # x = vert_vector.x
+                # y = vert_vector.y
+                # z = vert_vector.z
 
                 n_vector = normalize_vector([vert_vector.x, vert_vector.y, vert_vector.z])
                 # print(f"Normalized Vector: {n_vector}")
-                # x = n_vector[0]
-                # y = n_vector[1]
-                # z = n_vector[2]
+                # print(f"u_axis: {texture.u_axis}, v_axis: {texture.v_axis}")
+                x = n_vector[0]
+                y = n_vector[1]
+                z = n_vector[2]
 
                 bsp_u = x * texture.u_axis[0] + y * texture.u_axis[1] + z * texture.u_axis[2] + texture.u_offset
                 bsp_v = x * texture.v_axis[0] + y * texture.v_axis[1] + z * texture.v_axis[2] + texture.v_offset
@@ -292,8 +293,8 @@ def create_uvs():
                     v = (1- bsp_v / texture_res[1])
 
                     # u = bsp_u
-                    # v = bsp_v
-
+                    # v = 1 - bsp_v
+                    # print([u, v])
                     # Logging/debugging
                     min_u = min(min_u, u)
                     max_u = max(max_u, u)
