@@ -53,3 +53,8 @@ def normalize_vector(vector):
     # Normalize the vector by dividing each component by the magnitude
     normalized_vector = [vector[0] / magnitude, vector[1] / magnitude, vector[2] / magnitude]
     return normalized_vector
+
+
+
+def remove_duplicates(lst):
+    return list(dict.fromkeys(lst))

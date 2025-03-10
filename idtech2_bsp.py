@@ -6,6 +6,8 @@ import os
 import sys
 import subprocess
 import stat
+import numpy as np
+from collections import defaultdict
 from .types import *
 from .utils import *
 from importlib import reload # required when a self-written module is imported that's edited simultaneously
@@ -123,6 +125,7 @@ def get_face_and_texture_vertices(bytes):
     This method will accomplish both of these goals because the work to associate the edges/verts for mesh.from_pydata
     is essentially halfway to getting the texture associated as well.
     """
+    # current_face_verts = list() # dupe checking
     faces_by_verts = list()
     for idx, f in enumerate(BSP_OBJECT.faces):
         
@@ -140,20 +143,37 @@ def get_face_and_texture_vertices(bytes):
             # Negative number indicates drawing the edge from the 2nd point instead of the 1st
             if edge_idx < 0:
                 face_vert_list.extend(list(reversed(this_edge)))
+                # current_face_verts.extend(list(reversed(this_edge)))
             else:
                 face_vert_list.extend(this_edge)
+                # current_face_verts.extend(this_edge)
 
+
+        face_vert_list = remove_duplicates(face_vert_list)
         # Adds vertex indices to a list corresponding to the particular face
         # Used for creating mesh from pydata
         faces_by_verts.append(face_vert_list)
         BSP_OBJECT.face_vert_dict[idx] = tuple(face_vert_list)
 
+        # DEBUGGING #
+        if any(item in [27, 28, 29, 30, 37, 50, 51, 55, 66, 1344, 1379] for item in face_vert_list):
+            print(f"face_vert_list: {face_vert_list}")
+
         # Now that we have vertices associated with faces, while we're here, get the texture_info from the face,
         # and associate the vertices with that texture as well, for assigning UVs later
         face_texture = BSP_OBJECT.textures[f.texture_info]
         for vert_idx in face_vert_list:
+            # if vert_idx in BSP_OBJECT.vert_texture_dict.keys():
+            #     print(f"Vertex {vert_idx} already in vert_texture_dict for texture: {BSP_OBJECT.vert_texture_dict[vert_idx]}")
+            #     print(f"Adding for {face_texture}")
             BSP_OBJECT.vert_texture_dict[vert_idx] = face_texture
-            
+
+        # intersections = [x for x in current_face_verts if x in faces_by_verts]
+        # if len(intersections) > 0:
+        #     print(f"Verts overlapping in faces: {intersections}")
+        
+        # current_face_verts = list()
+
     return faces_by_verts
 
 
@@ -175,6 +195,12 @@ def load_textures(bytes):
         )
         
         all_textures.append(texture_info)
+
+    # Note animation textures
+    for t in all_textures:
+        if t.next_texinfo != -1:
+            BSP_OBJECT.animation_textures.append(t.next_texinfo)
+            print(f"Adding animation texture to list: {t.next_texinfo}")
     return all_textures
 
 
@@ -217,26 +243,6 @@ def create_materials():
 def assign_materials():
     bpy.context.tool_settings.mesh_select_mode = [False, False, True]
 
-    # for material_idx, material in enumerate(BSP_OBJECT.obj.data.materials):
-    #     bpy.context.object.active_material_index = material_idx
-
-    #     bpy.ops.object.mode_set(mode = 'EDIT')
-    #     bpy.ops.mesh.select_all(action = 'DESELECT')
-
-    #     bpy.ops.object.mode_set(mode = 'OBJECT')
-    #     for face_idx, face in enumerate(BSP_OBJECT.mesh.polygons):      # MAYBE NOT THE SAME ORDER AFTER ALL, POOP #
-    #         texture_idx = BSP_OBJECT.faces[face_idx].texture_info
-    #         texture_name = BSP_OBJECT.textures[texture_idx].texture_name
-    #         # material_idx = BSP_OBJECT.texture_material_index_dict[texture_name]
-    #         found_material_idx = bpy.data.materials.find(f"M_{texture_name}")
-    #         # print(f"M_{texture_name} returned material index {found_material_idx}")
-
-    #         if material_idx == found_material_idx:
-    #             face.material_index = bpy.context.object.active_material_index
-
-    # bpy.ops.object.mode_set(mode = 'OBJECT')
-    # bpy.ops.object.origin_set(type='ORIGIN_GEOMETRY')
-
     for material in BSP_OBJECT.obj.data.materials:
         for face in BSP_OBJECT.mesh.polygons:
             texture_idx = BSP_OBJECT.faces[face.index].texture_info
@@ -248,6 +254,8 @@ def assign_materials():
 
 
 def create_uvs():
+    BSP_OBJECT.obj.select_set(True)
+
     uv_layer = BSP_OBJECT.mesh.uv_layers.new()
     BSP_OBJECT.mesh.uv_layers.active = uv_layer
 
@@ -259,58 +267,95 @@ def create_uvs():
     # Hopefully only non-image files that match the name of supposed textures...
     skipped_textures = dict()
 
+    bpy.ops.object.mode_set(mode='OBJECT')
+
+
     for face in BSP_OBJECT.mesh.polygons:
-        for loop_idx in face.loop_indices:
-                vert_idx = BSP_OBJECT.obj.data.loops[loop_idx].vertex_index
-                texture = BSP_OBJECT.vert_texture_dict[vert_idx]
-                # Normalize
-                vert_vector = BSP_OBJECT.vertices[vert_idx]
+        for (vert_idx, loop_idx) in zip(face.vertices, face.loop_indices):
+            # vert_idx = BSP_OBJECT.obj.data.loops[loop_idx].vertex_index
+            # texture = BSP_OBJECT.vert_texture_dict[vert_idx]
+            texture_info = BSP_OBJECT.faces[face.index].texture_info
+            texture = BSP_OBJECT.textures[texture_info]
 
-                x = vert_vector.x
-                y = vert_vector.y
-                z = vert_vector.z
+            # Could omit animation textures, but probably pointless...
+            
+            vert_vector = BSP_OBJECT.vertices[vert_idx]
 
-                bsp_u = x * texture.u_axis[0] + y * texture.u_axis[1] + z * texture.u_axis[2] + texture.u_offset
-                bsp_v = x * texture.v_axis[0] + y * texture.v_axis[1] + z * texture.v_axis[2] + texture.v_offset
+            x = vert_vector.x
+            y = vert_vector.y
+            z = vert_vector.z
 
-                try:
-                    texture_res = BSP_OBJECT.texture_resolution_dict[texture.texture_name]
+            bsp_u = x * texture.u_axis[0] + y * texture.u_axis[1] + z * texture.u_axis[2] + texture.u_offset
+            bsp_v = x * texture.v_axis[0] + y * texture.v_axis[1] + z * texture.v_axis[2] + texture.v_offset
 
-                    if not texture_res:
-                        print(f"ERROR:  No resolution found for {texture.texture_name}")
+            # bsp_u = x * texture.u_axis[0] + texture.u_offset
+            # bsp_v = y * texture.v_axis[0] + texture.v_offset
+
+            try:
+                texture_res = BSP_OBJECT.texture_resolution_dict[texture.texture_name]
+
+                if not texture_res:
+                    print(f"ERROR:  No resolution found for {texture.texture_name}")
+                
+                u1 = bsp_u / texture_res[0]
+                # v1 = (1 - bsp_v / texture_res[1])
+                v1 = bsp_v / texture_res[1]
+
+                # if bsp_v > 1:
+                #     print(f"v is > 1: {texture.texture_name} - RES: {texture_res}")
+                # else:
+                #     print(f"v is < 1: {texture.texture_name} - RES: {texture_res}")
+                # v1 = bsp_v / texture_res[1]
+
+                # NUMPY method...doesn't work even though it takes in any # of dimensions
+                # uv_norm = np.array([u1, v1]) / np.linalg.norm([u1,v1])
+                # u = uv_norm[0]
+                # v = uv_norm[1]
+
+
+                # Vanilla, works for more stuff
+                u = u1
+                v = v1
+
+                # print(f"Normalized U, V: {[u, v]}")
+
+                # print([u, v])
+                # Logging/debugging
+                min_u = min(min_u, u)
+                max_u = max(max_u, u)
+                min_v = min(min_v, v)
+                max_v = max(max_v, v)
+
+                # print([u,v])
+
+                # bugged_list = [27, 28, 29, 30, 37, 50, 51, 55, 66, 1344, 1379]
+                # # if texture.texture_name == 'rowdy01/carpeted4' and u in u_list and v in v_list:
+                # if vert_idx in bugged_list:
+                #     print("*******************************")
+                #     print(f"Vertex index: {vert_idx}, Coordinates of vertex: {[x, y, z]}, Loop Index: {loop_idx}")
+                #     print(f"BSP UVs: {[bsp_u, bsp_v]}")
+                #     print(f"U_Axis: {[texture.u_axis]}, Offset: {texture.u_offset}")
+                #     print(f"V_Axis: {texture.v_axis}, Offset: {texture.v_offset}")
+                #     print(f"Texture name: {texture.texture_name}, resolution: {texture_res}")
+                #     print(f"UVs after texture calc: {[u, v]}")
                     
-                    u1 = bsp_u / texture_res[0]
-                    v1 = (1- bsp_v / texture_res[1])
-                    # v1 = bsp_v / texture_res[1]
 
-                    uv_norm = normalize_vector([u1,v1])
-                    u = uv_norm[0]
-                    v = uv_norm[1]
-
-                    # print(f"Normalized U, V: {[u, v]}")
-
-                    # print([u, v])
-                    # Logging/debugging
-                    min_u = min(min_u, u)
-                    max_u = max(max_u, u)
-                    min_v = min(min_v, v)
-                    max_v = max(max_v, v)
-
-                    # print([u,v])
-                    uv_layer.data[loop_idx].uv = [u,v]
-                except Exception as e:
-                    # print(f"Skipping {texture.texture_name} (may be .atd file or non-image)")
-                    if texture.texture_name not in skipped_textures.keys():
-                        skipped_textures[texture.texture_name] = f"{e}\n{e.__traceback__.tb_frame.f_code.co_filename}\n{e.__traceback__.tb_lineno}" + \
-                            f"\nUV1: {u1,v1}"
-                    continue
+                # if 'spin' in texture.texture_name:
+                # print(f"UVs: {[u, v]}")
+                uv_layer.data[loop_idx].uv = [u,v]
+            except Exception as e:
+                # print(f"Skipping {texture.texture_name} (may be .atd file or non-image)")
+                if texture.texture_name not in skipped_textures.keys():
+                    skipped_textures[texture.texture_name] = f"{e}\n{e.__traceback__.tb_frame.f_code.co_filename}\n{e.__traceback__.tb_lineno}" + \
+                        f"\nUV1: {u1,v1}"
+                continue
 
     print(f"Min. U: {min_u}")
     print(f"Max. U: {max_u}")
     print(f"Min V: {min_v}")
     print(f"Max V: {max_v}")
     
-    print(*[f"{key}: {value}" for key, value in skipped_textures.items()], sep="\n")
+    # print(*[f"{key}: {value}" for key, value in skipped_textures.items()], sep="\n")
 
 
 
@@ -380,9 +425,9 @@ def load_idtech2_bsp(bsp_path):
         get_texture_images()
 
         faces_by_verts = get_face_and_texture_vertices(file_bytes)
-        BSP_OBJECT.mesh.from_pydata(BSP_OBJECT.vertices, BSP_OBJECT.edges, faces_by_verts)
+        # BSP_OBJECT.mesh.from_pydata(BSP_OBJECT.vertices, BSP_OBJECT.edges, faces_by_verts)
+        BSP_OBJECT.mesh.from_pydata(BSP_OBJECT.vertices, [], faces_by_verts)
         create_materials()
-        create_uvs()
         
         BSP_OBJECT.mesh.update()
         
@@ -390,6 +435,7 @@ def load_idtech2_bsp(bsp_path):
         main_collection.objects.link(BSP_OBJECT.obj)
         bpy.context.view_layer.objects.active = BSP_OBJECT.obj
 
+        create_uvs()
         assign_materials()
 
 

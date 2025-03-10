@@ -214,3 +214,7 @@ class BSP_OBJECT(object):
     material_texture_dict = dict()
     texture_material_index_dict = dict()
     texture_resolution_dict = dict()
+
+    # store ids of textures that are referred to from other textures
+    # these are for animation, and beyond the current intent of the plugin/blender
+    animation_textures = list()
