@@ -301,8 +301,7 @@ def create_uvs():
                 except Exception as e:
                     # print(f"Skipping {texture.texture_name} (may be .atd file or non-image)")
                     if texture.texture_name not in skipped_textures.keys():
-                        skipped_textures[texture.texture_name] = f"{e}\n{e.__traceback__.tb_frame.f_code.co_filename}\n{e.__traceback__.tb_lineno}" + \
-                            f"\nUV1: {u1,v1}"
+                        skipped_textures[texture.texture_name] = "{e}\n{e.__traceback__.tb_frame.f_code.co_filename}\n{e.__traceback__.tb_lineno}"
                     continue
 
     print(f"Min. U: {min_u}")
