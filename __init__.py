@@ -1,14 +1,13 @@
 bl_info = {
     "name": "idTech 2 BSP Importer",
     "author": "GeneralProtectionFault",
-    "version": (0,0,5),
+    "version": (1,0,1),
     "blender": (4,3,0),
     "location": "File > Import > idTech 2 [Quake II/Anachronox] (.BSP)",
     "warning": "",
     "github_url": "https://github.com/GeneralProtectionFault/idTech-2-BSP-Blender-Importer",
     "doc_url": ""
 }
-
 
 from bpy_extras.io_utils import ImportHelper
 from bpy.props import BoolProperty, StringProperty
@@ -26,10 +25,18 @@ class ImportBSP(bpy.types.Operator, ImportHelper):
         options={'HIDDEN'},
         maxlen=255,  # Max internal buffer length, longer would be clamped.
     )
+
+    model_scale: bpy.props.FloatProperty(name="New Model Scale",
+                                    description='Desired scale for the model.\nDefault is 1%, as idTech 2 did not consider vertex coordinates "meters" :)',
+                                    default=.01)
     
+    apply_transforms: BoolProperty(name="Apply transforms",
+                                        description="Applies the previous transforms.",
+                                        default=True)
+
     def execute(self, context):
         try:
-            return load_idtech2_bsp(self.filepath)
+            return load_idtech2_bsp(self.filepath, self.model_scale, self.apply_transforms)
         except Exception as argument:
             self.report({'ERROR'}, str(argument))
 

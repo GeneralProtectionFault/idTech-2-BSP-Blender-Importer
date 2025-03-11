@@ -209,7 +209,6 @@ class BSP_OBJECT(object):
 
     vert_texture_dict = dict()
     
-    face_vert_dict = dict()
     texture_path_dict = dict()
     material_texture_dict = dict()
     texture_material_index_dict = dict()
@@ -218,3 +217,19 @@ class BSP_OBJECT(object):
     # store ids of textures that are referred to from other textures
     # these are for animation, and beyond the current intent of the plugin/blender
     animation_textures = list()
+
+
+
+
+@dataclass
+class wal_header(object):
+    texture_name: str
+    width: int
+    height: int
+    mip_level_offsets: List[int]
+    anim_name: str
+    flags: int
+    contents: int
+    value: int
+
+
