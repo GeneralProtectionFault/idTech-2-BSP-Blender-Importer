@@ -11,7 +11,7 @@ This addon does not (yet, at least) attempt to import models and/or entities ref
 ![image](https://github.com/user-attachments/assets/cc4cce35-0cda-4902-8784-7d7410ecdd0e)
 
 
-###.WAL images
+.WAL images
 Support has been added for .wal images, commonly used in Quake II.
 These, along with other files, need to be extracted from the Quake II PAK files.
 This tool will make that easy: https://github.com/GeneralProtectionFault/PAKExtract
