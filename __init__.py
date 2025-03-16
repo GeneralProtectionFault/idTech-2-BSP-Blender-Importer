@@ -1,12 +1,12 @@
 bl_info = {
     "name": "idTech 2 BSP Importer",
     "author": "GeneralProtectionFault",
-    "version": (1,1,0),
+    "version": (1,2,0),
     "blender": (4,3,0),
-    "location": "File > Import > idTech 2 [Quake II/Anachronox] (.BSP)",
+    "location": "File > Import > idTech 2 Quake II/Anachronox (.BSP)",
     "warning": "",
     "github_url": "https://github.com/GeneralProtectionFault/idTech-2-BSP-Blender-Importer",
-    "doc_url": ""
+    "category": "Import-Export"
 }
 
 from bpy_extras.io_utils import ImportHelper

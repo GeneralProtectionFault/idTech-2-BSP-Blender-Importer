@@ -346,7 +346,7 @@ def get_texture_images(search_from_parent):
                 print(f'Exception: {e}')
 
             BSP_OBJECT.texture_path_dict[t.texture_name] = final_texture_path
-            print(f"Actual path: {actual_texture_path} ----- Final path: {final_texture_path}")
+            # print(f"Actual path: {actual_texture_path} ----- Final path: {final_texture_path}")
             
         else:
             print(f"ERROR: {t.texture_name}, index {i} not found at path:\n{texture_base_path}")
