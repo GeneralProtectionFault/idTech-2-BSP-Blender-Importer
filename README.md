@@ -2,6 +2,10 @@
 This addon is to import .BSP files directly into Blender.
 Tested with Anachronox, but format should be the same as Quake II.
 
+Note that lightmaps have not been incorporated.  I'm not sure how that would best translate,
+I'll add it if I see a sensible way to have it affect a material setting or something, but otherwise,
+of course, that sort of thing can be done in Blender.
+
 Currently, addon will simply search all the files with appropriate extensions within the working directory,
 so make sure all textures that the .BSP file needs/refers to are somewhere within the folder the .BSP file 
 was opened from.
