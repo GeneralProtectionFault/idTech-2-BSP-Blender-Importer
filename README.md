@@ -8,4 +8,5 @@ was opened from.
 
 This addon does not (yet, at least) attempt to import models and/or entities referred to by the .BSP file.
 
-![image](https://github.com/user-attachments/assets/2924d68a-5fee-47fb-8504-c0fccf3096ce)
+![image](https://github.com/user-attachments/assets/cc4cce35-0cda-4902-8784-7d7410ecdd0e)
+
