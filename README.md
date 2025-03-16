@@ -1,7 +1,6 @@
 # idTech 2 BSP Blender Importer
 This addon is to import .BSP files directly into Blender.
 Tested with Anachronox, but format should be the same as Quake II.
-However, .WAL image support is not yet implemented, but planned so long as I can Python-ify that.
 
 Currently, addon will simply search all the files with appropriate extensions within the working directory,
 so make sure all textures that the .BSP file needs/refers to are somewhere within the folder the .BSP file 
