@@ -1,7 +1,7 @@
 bl_info = {
     "name": "idTech 2 BSP Importer",
     "author": "GeneralProtectionFault",
-    "version": (1,0,1),
+    "version": (1,1,0),
     "blender": (4,3,0),
     "location": "File > Import > idTech 2 [Quake II/Anachronox] (.BSP)",
     "warning": "",
@@ -34,9 +34,14 @@ class ImportBSP(bpy.types.Operator, ImportHelper):
                                         description="Applies the previous transforms.",
                                         default=True)
 
+    search_from_parent: BoolProperty(name="Search for textures from parent folder",
+                                        description="""In a typical Quake game folder, a .BSP file may refer to textures in a textures folder not within itself.
+                                        In this case, all files under the PARENT folder from the .BSP will be searched.""",
+                                        default=True)
+
     def execute(self, context):
         try:
-            return load_idtech2_bsp(self.filepath, self.model_scale, self.apply_transforms)
+            return load_idtech2_bsp(self.filepath, self.model_scale, self.apply_transforms, self.search_from_parent)
         except Exception as argument:
             self.report({'ERROR'}, str(argument))
 

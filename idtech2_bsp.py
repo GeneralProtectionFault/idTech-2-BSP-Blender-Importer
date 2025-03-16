@@ -8,8 +8,9 @@ import subprocess
 import stat
 import numpy as np
 from collections import defaultdict
-from .types import *
+from .custom_types import *
 from .utils import *
+from .wal import *
 from importlib import reload # required when a self-written module is imported that's edited simultaneously
 
 
@@ -126,7 +127,6 @@ def get_face_and_texture_vertices(bytes):
     mesh.from_pydata needs the vertex indices of the faces, which will be returned from this.
     The UVs need to be calculated per vertex, using the coordinates.
     """
-    # current_face_verts = list() # dupe checking
     faces_by_verts = list()
     for idx, f in enumerate(BSP_OBJECT.faces):
         
@@ -287,11 +287,17 @@ def create_uvs(model_scale):
 
 
 
-def get_texture_images():
-    # TODO: Add .WAL support
-    valid_extensions = ['.tga','.png','.bmp','.jpg']
+def get_texture_images(search_from_parent):
+    valid_extensions = ['.tga','.png','.bmp','.jpg','.wal','pcx']
     file_paths = []
-    for root, dirs, files in os.walk(BSP_OBJECT.folder_path):
+
+    # For Quake/Quake II, the default folder layout often places the .BSP files in a folder adjacent the textures,
+    # instead of in a subfolder.  This option allows searching from the parent folder to find those textures.
+    texture_search_folder = BSP_OBJECT.folder_path
+    if search_from_parent:
+        texture_search_folder = os.path.dirname(BSP_OBJECT.folder_path)
+
+    for root, dirs, files in os.walk(texture_search_folder):
         for file in files:
             if any(file.endswith(ext.casefold()) for ext in valid_extensions):
                 file_paths.append(os.path.join(root, file))
@@ -299,10 +305,10 @@ def get_texture_images():
     file_paths_map = {file_path.casefold(): file_path for file_path in file_paths}
 
     for i, t in enumerate(BSP_OBJECT.textures):
-        texture_base_path = os.path.join(BSP_OBJECT.folder_path, *t.texture_name.split('/'))
+        # texture_base_path = os.path.join(BSP_OBJECT.folder_path, *t.texture_name.split('/'))
         # potential_texture_paths = [f"{texture_base_path}{ext}" for ext in valid_extensions]
         # actual_texture_path = getfile_insensitive_from_list(potential_texture_paths)
-
+        
         texture_name_casefold = t.texture_name.casefold()
         for casefolded_path, original_path in file_paths_map.items():
             if texture_name_casefold.replace('\\','/') in casefolded_path.replace('\\','/'):
@@ -310,22 +316,44 @@ def get_texture_images():
                 break  # Stop checking other paths for this texture
 
         if actual_texture_path:
-            BSP_OBJECT.texture_path_dict[t.texture_name] = actual_texture_path
             # Get resolution of texture
             try:
-                if not t.texture_name in BSP_OBJECT.texture_resolution_dict:
-                    with PIL.Image.open(actual_texture_path) as img:
-                        BSP_OBJECT.texture_resolution_dict[t.texture_name] = img.size # x, y
+                
+                final_texture_path = ''
+                if actual_texture_path.endswith('.pcx'):
+                    print(f".PCX image: {actual_texture_path}")
+                if actual_texture_path.endswith('.wal'):
+                    wal_object = wal_image(actual_texture_path)
+                    with wal_object.image as img:
+                        if not t.texture_name in BSP_OBJECT.texture_resolution_dict:
+                            BSP_OBJECT.texture_resolution_dict[t.texture_name] = (wal_object.width, wal_object.height)
+
+                        # Need to write a normal image because even if we can parse it, blender won't load a .wal as a texture
+                        base_texture_path, _ = os.path.splitext(actual_texture_path)
+                        new_texture_path = base_texture_path + ".png"
+                        print(f".WAL image, writing .PNG copy for Blender: {new_texture_path}")
+                        img.save(new_texture_path)
+                        final_texture_path = new_texture_path
+
+                else:
+                    final_texture_path = actual_texture_path
+                    with PIL.Image.open(final_texture_path) as img:
+                        if not t.texture_name in BSP_OBJECT.texture_resolution_dict:
+                            BSP_OBJECT.texture_resolution_dict[t.texture_name] = img.size # x, y
             except Exception as e:
-                print(f"Unable to open texture file (may be .atd, etc...): {t.texture_name}")
-                print(f"Attempted path: {actual_texture_path}")
+                # print(f"Unable to open texture file (may be .atd, etc...): {t.texture_name}")
+                print(f"ERROR getting {t.texture_name}, attempted path: {final_texture_path}")
                 print(f'Exception: {e}')
+
+            BSP_OBJECT.texture_path_dict[t.texture_name] = final_texture_path
+            print(f"Actual path: {actual_texture_path} ----- Final path: {final_texture_path}")
+            
         else:
             print(f"ERROR: {t.texture_name}, index {i} not found at path:\n{texture_base_path}")
 
 
 
-def load_idtech2_bsp(bsp_path, model_scale, apply_transforms):
+def load_idtech2_bsp(bsp_path, model_scale, apply_transforms, search_from_parent):
     if not os.path.isfile(bsp_path):
         bpy.context.window_manager.popup_menu(missing_file, title="Error", icon='ERROR')
         return {'FINISHED'} 
@@ -349,7 +377,7 @@ def load_idtech2_bsp(bsp_path, model_scale, apply_transforms):
         BSP_OBJECT.textures = load_textures(file_bytes[BSP_OBJECT.header.texture_info_offset : BSP_OBJECT.header.texture_info_offset+BSP_OBJECT.header.texture_info_length])
         BSP_OBJECT.faces = load_faces(file_bytes[BSP_OBJECT.header.faces_offset : BSP_OBJECT.header.faces_offset+BSP_OBJECT.header.faces_length])
 
-        get_texture_images()
+        get_texture_images(search_from_parent)
 
         faces_by_verts = get_face_and_texture_vertices(file_bytes)
         BSP_OBJECT.mesh.from_pydata(BSP_OBJECT.vertices, [], faces_by_verts)

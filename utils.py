@@ -2,10 +2,6 @@ import os
 import glob
 import math
 
-paths = [
-    '/home/q/ART/Anachronox/BSPs/ballotine/Girder05.tga'
-]
-
 
 def split_path_all_parts(path):
     parts = []

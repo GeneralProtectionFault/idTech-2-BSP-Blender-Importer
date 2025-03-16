@@ -221,15 +221,6 @@ class BSP_OBJECT(object):
 
 
 
-@dataclass
-class wal_header(object):
-    texture_name: str
-    width: int
-    height: int
-    mip_level_offsets: List[int]
-    anim_name: str
-    flags: int
-    contents: int
-    value: int
 
-
+            
+            
