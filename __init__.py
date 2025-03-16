@@ -37,7 +37,7 @@ class ImportBSP(bpy.types.Operator, ImportHelper):
     search_from_parent: BoolProperty(name="Search for textures from parent folder",
                                         description="""In a typical Quake game folder, a .BSP file may refer to textures in a textures folder not within itself.
                                         In this case, all files under the PARENT folder from the .BSP will be searched.""",
-                                        default=True)
+                                        default=False)
 
     def execute(self, context):
         try:
