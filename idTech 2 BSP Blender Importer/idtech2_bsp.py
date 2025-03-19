@@ -1,62 +1,12 @@
 import bpy
 from dataclasses import dataclass, fields
 import struct
-import platform
 import os
-import sys
-import subprocess
-import stat
 import numpy as np
 from collections import defaultdict
 from .custom_types import *
 from .utils import *
 from .wal import *
-from importlib import reload # required when a self-written module is imported that's edited simultaneously
-
-
-
-
-# path to python.exe
-if platform.system() == "Linux":
-    # Depending on the environment, the binary might be "python" or "python3.11", etc...
-    # Stupid...but need to "find" the python binary to avoid a crash...
-    python_bin_folder = os.path.join(sys.prefix, 'bin')
-
-    # Search for binary files
-    executable = stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH
-    for filename in os.listdir(python_bin_folder):
-        full_python_path = os.path.join(python_bin_folder, filename)
-        if os.path.isfile(full_python_path):
-            st = os.stat(full_python_path)
-            mode = st.st_mode
-            # If file is an executable and contains the text "python"
-            if mode & executable and 'python' in filename:
-                # print(filename,oct(mode))
-                break
-
-    python_exe = full_python_path
-else:
-    python_exe = os.path.join(sys.prefix, 'bin', 'python.exe')
-
-try:
-    # upgrade pip
-    subprocess.call([python_exe, "-m", "ensurepip"])
-    
-    # This doesn't jive well with Blender's Python environment for whatever reason...
-    # subprocess.call([python_exe, "-m", "pip", "install", "--upgrade", "pip"])
-except Exception as argument:
-    print(f"Issue ensuring/upgrading pip:\n{argument}")
-
-
-
-# install required packages
-try:
-    subprocess.call([python_exe, "-m", "pip", "install", "pillow"])
-    # subprocess.call([python_exe, "-m", "pip", "install", "mathutils"])
-
-except ImportError as argument:
-    print(f"ERROR: Pillow/PIL failed to install\n{argument}")
-
 
 import PIL
 from PIL import Image, ImagePath
