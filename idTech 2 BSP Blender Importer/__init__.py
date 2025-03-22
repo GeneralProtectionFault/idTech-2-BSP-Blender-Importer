@@ -1,7 +1,7 @@
 bl_info = {
     "name": "idTech 2 BSP Importer",
     "author": "GeneralProtectionFault",
-    "version": (1,2,0),
+    "version": (1,2,2),
     "blender": (4,3,0),
     "location": "File > Import > idTech 2 Quake II/Anachronox (.BSP)",
     "warning": "",
