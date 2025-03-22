@@ -238,7 +238,7 @@ def create_uvs(model_scale):
 
 
 def get_texture_images(search_from_parent):
-    valid_extensions = ['.tga','.png','.bmp','.jpg','.wal','pcx']
+    valid_extensions = ['.tga','.png','.bmp','.jpg','.wal']
     file_paths = []
 
     # For Quake/Quake II, the default folder layout often places the .BSP files in a folder adjacent the textures,
@@ -246,6 +246,9 @@ def get_texture_images(search_from_parent):
     texture_search_folder = BSP_OBJECT.folder_path
     if search_from_parent:
         texture_search_folder = os.path.dirname(BSP_OBJECT.folder_path)
+
+    print(f"Searching for appropriate texture image files in: {texture_search_folder}")
+    actual_texture_path = ""
 
     for root, dirs, files in os.walk(texture_search_folder):
         for file in files:
@@ -265,13 +268,13 @@ def get_texture_images(search_from_parent):
                 actual_texture_path = original_path
                 break  # Stop checking other paths for this texture
 
-        if actual_texture_path:
+        if not actual_texture_path == "":
             # Get resolution of texture
             try:
                 
                 final_texture_path = ''
-                if actual_texture_path.endswith('.pcx'):
-                    print(f".PCX image: {actual_texture_path}")
+                # if actual_texture_path.endswith('.pcx'):
+                #     print(f".PCX image: {actual_texture_path}")
                 if actual_texture_path.endswith('.wal'):
                     wal_object = wal_image(actual_texture_path)
                     with wal_object.image as img:
@@ -299,7 +302,7 @@ def get_texture_images(search_from_parent):
             # print(f"Actual path: {actual_texture_path} ----- Final path: {final_texture_path}")
             
         else:
-            print(f"ERROR: {t.texture_name}, index {i} not found at path:\n{texture_base_path}")
+            print(f"ERROR: {t.texture_name}, index {i} not found (actual_texture_path blank)")
 
 
 
