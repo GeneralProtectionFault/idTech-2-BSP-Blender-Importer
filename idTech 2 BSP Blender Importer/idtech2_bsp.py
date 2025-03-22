@@ -284,8 +284,9 @@ def get_texture_images(search_from_parent):
                         # Need to write a normal image because even if we can parse it, blender won't load a .wal as a texture
                         base_texture_path, _ = os.path.splitext(actual_texture_path)
                         new_texture_path = base_texture_path + ".png"
-                        print(f".WAL image, writing .PNG copy for Blender: {new_texture_path}")
-                        img.save(new_texture_path)
+                        if not os.path.exists(new_texture_path):
+                            print(f".WAL image, writing .PNG copy for Blender: {new_texture_path}")
+                            img.save(new_texture_path)
                         final_texture_path = new_texture_path
 
                 else:

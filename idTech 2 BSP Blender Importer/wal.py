@@ -127,7 +127,7 @@ class wal_image(object):
 
 if __name__ == "__main__":
     # TEST CASE #
-    wal_path = '/home/q/Documents/test/textures/e3u2/sflr1_1.wal'
+    wal_path = '/home/q/Documents/quake2_test/textures/e3u2/sflr1_1.wal'
     wal_object = wal_image(wal_path)
 
     print("--------------- .WAL HEADER VALUES -------------------")
