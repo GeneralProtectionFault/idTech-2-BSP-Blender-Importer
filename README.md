@@ -31,5 +31,5 @@ Be aware of this if you want to keep the folder clean, etc... or a copy can be m
 ## BSP Structure Diagram
 Please note this is almost certainly not perfect, and is almost certainly missing some information regarding brushes/leaves/etc... which are not necessary for 
 simply importing the map, but I used this when making this plugin, and I think can provide useful, digestable information, which is not easy
-to find all in 1 spot these days:
+to find all in 1 spot these days (This is hard to view in Github, but you can download the actual SVG or drawio file in the repo here):
 ![Diagram](Anachronox_BSP_Structure.drawio.svg)
