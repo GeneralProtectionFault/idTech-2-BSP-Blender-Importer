@@ -27,3 +27,9 @@ an option has been added to search all files within the *parent* of the folder c
 
 Also, because Blender will not recognize a .WAL file, the addon will parse .WAL files and write a .PNG file in the same folder.
 Be aware of this if you want to keep the folder clean, etc... or a copy can be made.  
+
+## BSP Structure Diagram
+Please note this is almost certainly not perfect, and is almost certainly missing some information regarding brushes/leaves/etc... which are not necessary for 
+simply importing the map, but I used this when making this plugin, and I think can provide useful, digestable information, which is not easy
+to find all in 1 spot these days:
+![Diagram](Anachronox_BSP_Structure.drawio.svg)
