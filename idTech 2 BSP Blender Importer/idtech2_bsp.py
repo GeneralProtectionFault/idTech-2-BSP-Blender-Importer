@@ -2,8 +2,11 @@ import bpy
 from dataclasses import dataclass, fields
 import struct
 import os
+import math
 import numpy as np
 from collections import defaultdict
+from pathlib import Path
+
 from .custom_types import *
 from .utils import *
 from .wal import *
@@ -11,6 +14,270 @@ from .wal import *
 import PIL
 from PIL import Image, ImagePath
 
+
+SAMPLE_STEP = 16.0  # world units per lightmap sample
+
+def save_all_face_lightmaps(file_bytes, pct):
+    # Determine base folder: prefer current .blend directory, else temp directory
+    # if bpy.data.filepath:
+    #     base_dir = Path(bpy.path.abspath("//"))
+    # else:
+    #     base_dir = Path(bpy.app.tempdir)
+    # out_folder = base_dir / "bsp_lightmaps"
+
+    BSP_OBJECT.lightmap_folder = Path(BSP_OBJECT.folder_path) / Path(f'{BSP_OBJECT.name}_bsp_lightmaps')
+    BSP_OBJECT.lightmap_folder.mkdir(parents=True, exist_ok=True)
+
+    lm_base_offset = getattr(BSP_OBJECT.header, "lightmaps_offset", 0)
+    lm_length = getattr(BSP_OBJECT.header, "lightmaps_length", None)
+    total_bytes = len(file_bytes)
+
+    def get_vertex_pos(vidx):
+        v = BSP_OBJECT.vertices[vidx]
+        return (v.x, v.y, v.z)
+
+    def dot3(a, b):
+        return a[0]*b.x + a[1]*b.y + a[2]*b.z
+
+    for fi, face in enumerate(BSP_OBJECT.faces):
+        vert_indices = BSP_OBJECT.face_verts_list[fi]
+        if not vert_indices:
+            continue
+
+        # get texinfo (holds u_axis/u_offset and v_axis/v_offset as provided)
+        texinfo = BSP_OBJECT.textures[face.texture_info]
+
+        # compute s/t for all vertices in texel space
+        s_vals = []
+        t_vals = []
+        for vidx in vert_indices:
+            vx, vy, vz = get_vertex_pos(vidx)
+            v = (vx, vy, vz)
+            s_real = dot3(v, bsp_vertex(*texinfo.u_axis)) - texinfo.u_offset
+            t_real = dot3(v, bsp_vertex(*texinfo.v_axis)) - texinfo.v_offset
+            s_vals.append(s_real / SAMPLE_STEP)
+            t_vals.append(t_real / SAMPLE_STEP)
+
+        min_s = math.floor(min(s_vals))
+        max_s = math.ceil(max(s_vals))
+        min_t = math.floor(min(t_vals))
+        max_t = math.ceil(max(t_vals))
+
+        width = int(max_s - min_s)
+        height = int(max_t - min_t)
+
+        # skip degenerate faces
+        if width <= 0 or height <= 0:
+            print(f"Skipping face {fi}: degenerate lightmap size {width}x{height}")
+            continue
+
+        # Read bytes from BSP lightdata lump. face.lightmap_offset is bytes per your class.
+        byte_offset = lm_base_offset + face.lightmap_offset
+        expected_bytes = width * height * 3
+        if byte_offset < 0 or byte_offset + expected_bytes > total_bytes:
+            print(f"Face {fi}: invalid lightmap offset/size (offset={byte_offset}, bytes_needed={expected_bytes}), skipping")
+            continue
+
+        rgb_bytes = file_bytes[byte_offset: byte_offset + expected_bytes]
+
+        # Convert to PIL image (RGB). The data is assumed row-major, tightly packed:
+        # Quake stores lightmaps with rows in increasing t; you may need to flip vertically if it looks inverted.
+        img = Image.frombytes('RGB', (width, height), rgb_bytes)
+
+        # Optional flip (uncomment if needed):
+        # img = img.transpose(Image.FLIP_TOP_BOTTOM)
+
+        if pct < 1.0:
+            # Convert to float array to do accurate blending
+            # Use 'RGBA' to ease working in Pillow without external libs
+            rgb_img = img.convert('RGBA')  # adds opaque alpha
+            # Get pixel data as a list of tuples (R,G,B,A)
+            pixels = list(rgb_img.getdata())
+            blended = []
+            inv = 1.0 - pct
+            # Precompute scale for integer math
+            for (r, g, b, a) in pixels:
+                # normalize
+                rn = r / 255.0
+                gn = g / 255.0
+                bn = b / 255.0
+                # blend toward white: out = inv*1.0 + pct * color
+                out_r = inv * 1.0 + pct * rn
+                out_g = inv * 1.0 + pct * gn
+                out_b = inv * 1.0 + pct * bn
+                # convert back to 0..255 integers, clamp
+                blended.append((
+                    int(max(0, min(255, round(out_r * 255)))),
+                    int(max(0, min(255, round(out_g * 255)))),
+                    int(max(0, min(255, round(out_b * 255)))),
+                    a
+                ))
+            # Put blended pixels back and convert to RGB
+            rgb_img.putdata(blended)
+            img = rgb_img.convert('RGB')
+
+
+
+        out_name = f"face_{fi:04d}_lightmap.png"
+        out_path = BSP_OBJECT.lightmap_folder / out_name
+        img.save(out_path, format="PNG")
+
+    print(f"Saved face lightmaps to: {BSP_OBJECT.lightmap_folder}")
+
+
+def apply_face_lightmaps_to_mesh():
+    # Determine folder where face lightmaps were saved
+    # if bpy.data.filepath:
+    #     base_dir = Path(bpy.path.abspath("//"))
+    # else:
+    #     base_dir = Path(bpy.app.tempdir)
+
+    lm_folder = BSP_OBJECT.lightmap_folder
+
+    obj = BSP_OBJECT.obj
+    mesh = obj.data
+
+    # Ensure a UV map for lightmaps exists; we'll create per-face UVs that span 0..1
+    lm_uv_name = "LightmapUV"
+    if lm_uv_name in mesh.uv_layers:
+        lm_uv = mesh.uv_layers[lm_uv_name]
+    else:
+        lm_uv = mesh.uv_layers.new(name=lm_uv_name)
+
+    # For convenience, ensure we have an active UV map (not strictly required)
+    mesh.uv_layers.active = lm_uv
+
+    # Load all per-face images into Blender.images with predictable names
+    # Map: face_index -> bpy.data.images image
+    face_image_map = {}
+    for poly in mesh.polygons:
+        fi = poly.index
+        img_path = lm_folder / f"face_{fi:04d}_lightmap.png"
+        if img_path.exists():
+            try:
+                img = bpy.data.images.load(str(img_path), check_existing=True)
+                face_image_map[fi] = img
+            except Exception as e:
+                print(f"Failed loading image for face {fi}: {e}")
+
+    # For each polygon that has a lightmap image, set its UVs to cover 0..1 and create a material that uses that image
+    # We'll create a material per polygon that has an image (to keep it simple)
+    for poly in mesh.polygons:
+        fi = poly.index
+        img = face_image_map.get(fi)
+        if not img:
+            continue
+
+        # set UVs for this polygon to full-quad (0..1) according to polygon loop order
+        # polygon.loop_start..loop_start+loop_total are indices into mesh.loops and uv layer data
+        loops_start = poly.loop_start
+        loops_total = poly.loop_total
+        # compute uv coords for each loop (we'll map the polygon's bounds to 0..1)
+        # simplest: map each loop vertex to a trivial UV layout covering [0,1] using barycentric-ish mapping:
+        # assign UVs cyclically so triangles/quads map reasonably
+        uv_layer = lm_uv.data
+        if loops_total == 3:
+            uvs = [(0.0,0.0),(1.0,0.0),(0.0,1.0)]
+        elif loops_total == 4:
+            uvs = [(0.0,0.0),(1.0,0.0),(1.0,1.0),(0.0,1.0)]
+        else:
+            # For n-gons, distribute around unit square perimeter (approx)
+            uvs = []
+            for i in range(loops_total):
+                frac = i / max(1, loops_total-1)
+                uvs.append((frac, frac))  # approximate; arbitrary but consistent
+        for li in range(loops_total):
+            uv_layer[loops_start + li].uv = uvs[li]
+
+        # Create material for this face that combines base material with this lightmap as multiply
+        base_texinfo_idx = BSP_OBJECT.faces[fi].texture_info
+        base_texture_name = BSP_OBJECT.textures[base_texinfo_idx].texture_name
+        base_mat_index = BSP_OBJECT.texture_material_index_dict.get(base_texture_name)
+
+        # Get the base material (created earlier) by index
+        if base_mat_index is None or base_mat_index >= len(BSP_OBJECT.obj.data.materials):
+            # fallback: create a basic material
+            base_mat = bpy.data.materials.new(name=f"M_{base_texture_name}_fallback")
+            base_mat.use_nodes = True
+        else:
+            base_mat = BSP_OBJECT.obj.data.materials[base_mat_index]
+
+        # Duplicate the base material so we can assign this face a unique lightmap image without affecting others
+        new_mat = base_mat.copy()
+        new_mat.name = f"{base_mat.name}_face_{fi:04d}"
+        new_mat.use_nodes = True
+        node_tree = new_mat.node_tree
+        nodes = node_tree.nodes
+        links = node_tree.links
+
+        # Ensure Principled BSDF exists
+        principled = None
+        for n in nodes:
+            if n.type == 'BSDF_PRINCIPLED':
+                principled = n
+                break
+        if not principled:
+            principled = nodes.new('ShaderNodeBsdfPrincipled')
+            output = None
+            for n in nodes:
+                if n.type == 'OUTPUT_MATERIAL':
+                    output = n
+                    break
+            if output:
+                links.new(principled.outputs['BSDF'], output.inputs['Surface'])
+
+        # Create Image Texture node for the lightmap
+        lm_tex_node = nodes.new('ShaderNodeTexImage')
+        lm_tex_node.image = img
+        # set the UV map to our LightmapUV
+        lm_tex_node.extension = 'CLIP'
+        # Create UV Map node to select LightmapUV
+        uv_map_node = nodes.new('ShaderNodeUVMap')
+        uv_map_node.uv_map = lm_uv_name
+        links.new(uv_map_node.outputs['UV'], lm_tex_node.inputs['Vector'])
+
+        # Create Mix node to multiply base color by lightmap (use Multiply = MixRGB with Fac=1 and blend type MULTIPLY)
+        mix_node = nodes.new('ShaderNodeMixRGB')
+        mix_node.blend_type = 'MULTIPLY'
+        mix_node.inputs['Fac'].default_value = 1.0
+
+        # Find existing base texture node in the node tree (if present) to connect into mix
+        base_color_node = None
+        for n in nodes:
+            if n.type == 'TEX_IMAGE' and n.image and n.image.filepath == getattr(base_mat.node_tree.nodes.get('Image Texture'), 'image', None):
+                base_color_node = n
+                break
+        # Simpler: create a new Image Texture node for the base texture if none found, using BSP_OBJECT.texture_path_dict
+        base_img = None
+        texture_path = BSP_OBJECT.texture_path_dict.get(base_texture_name)
+        if texture_path:
+            try:
+                base_img = bpy.data.images.load(texture_path, check_existing=True)
+            except:
+                base_img = None
+        if base_img:
+            base_tex_node = nodes.new('ShaderNodeTexImage')
+            base_tex_node.image = base_img
+            # connect base_tex_node color to mix color1
+            links.new(base_tex_node.outputs['Color'], mix_node.inputs['Color1'])
+        else:
+            # fallback: use a white color
+            rgb_node = nodes.new('ShaderNodeRGB')
+            rgb_node.outputs[0].default_value = (1.0,1.0,1.0,1.0)
+            links.new(rgb_node.outputs[0], mix_node.inputs['Color1'])
+
+        # connect lightmap into Color2 of mix
+        links.new(lm_tex_node.outputs['Color'], mix_node.inputs['Color2'])
+
+        # connect mix output to Principled Base Color
+        links.new(mix_node.outputs['Color'], principled.inputs['Base Color'])
+
+        # Append new material to object and assign to polygon
+        BSP_OBJECT.obj.data.materials.append(new_mat)
+        new_index = len(BSP_OBJECT.obj.data.materials) - 1
+        poly.material_index = new_index
+
+    print("Applied per-face lightmaps (one material per face with lightmap).")
 
 
 def load_header(bytes):
@@ -43,7 +310,7 @@ def load_verts(bytes, model_scale):
         # )
         all_verts.append(vertex)
     return all_verts
- 
+
 
 def load_edges(bytes):
     num_edges = len(bytes) / 4
@@ -79,7 +346,7 @@ def get_face_and_texture_vertices(bytes):
     """
     faces_by_verts = list()
     for idx, f in enumerate(BSP_OBJECT.faces):
-        
+
         face_vert_list = list()
         # vert_texture_list = list()
         for i in range(f.first_edge, f.first_edge + f.num_edges):
@@ -87,7 +354,7 @@ def get_face_and_texture_vertices(bytes):
             edge_idx = struct.unpack("<i", bytes[BSP_OBJECT.header.face_edge_table_offset + (i*4) : BSP_OBJECT.header.face_edge_table_offset + (i*4) + 4])[0]
             if edge_idx < 0:
                 negative_flag = True
-            
+
             # Bear in mind this gets the INDICES of the vertices of the edge, not the coordinates (this is what the mesh from pydata function takes in)
             this_edge = BSP_OBJECT.edges[abs(edge_idx)]
 
@@ -101,7 +368,7 @@ def get_face_and_texture_vertices(bytes):
         face_vert_list = remove_duplicates(face_vert_list)
         # Adds vertex indices to a list corresponding to the particular face
         # Used for creating mesh from pydata
-        faces_by_verts.append(face_vert_list)
+        BSP_OBJECT.face_verts_list.append(face_vert_list) 
 
         # Now that we have vertices associated with faces, while we're here, get the texture_info from the face,
         # and associate the vertices with that texture as well, for assigning UVs later
@@ -109,8 +376,7 @@ def get_face_and_texture_vertices(bytes):
         for vert_idx in face_vert_list:
             BSP_OBJECT.vert_texture_dict[vert_idx] = face_texture
 
-    return faces_by_verts
-
+    # return faces_by_verts
 
 
 def load_textures(bytes):
@@ -128,7 +394,7 @@ def load_textures(bytes):
             texture_name = b''.join([byte for byte in unpacked_bytes[10:42] if byte != b'\x00']).decode('utf-8'),
             next_texinfo = unpacked_bytes[42]
         )
-        
+
         all_textures.append(texture_info)
 
     # Note animation textures
@@ -139,7 +405,6 @@ def load_textures(bytes):
     return all_textures
 
 
-
 def create_materials():
     distinct_texture_names = {tex.texture_name for tex in BSP_OBJECT.textures}
     for i, t in enumerate(distinct_texture_names):
@@ -148,7 +413,7 @@ def create_materials():
 
             # Create the material
             mat = bpy.data.materials.new(name = material_name)
-            
+
             mat.use_nodes = True
             # Create the shader node
             bsdf = mat.node_tree.nodes['Principled BSDF']
@@ -174,7 +439,6 @@ def create_materials():
             print(f"ERROR creating material for texture: {t}")
 
 
-
 def assign_materials():
     bpy.context.tool_settings.mesh_select_mode = [False, False, True]
 
@@ -183,12 +447,12 @@ def assign_materials():
             texture_idx = BSP_OBJECT.faces[face.index].texture_info
             texture_name = BSP_OBJECT.textures[texture_idx].texture_name
             found_material_idx = BSP_OBJECT.texture_material_index_dict[texture_name]
-            
+
             face.material_index = found_material_idx
 
 
-
 def create_uvs(model_scale):
+    print("Creating UVs...")
     BSP_OBJECT.obj.select_set(True)
     uv_layer = BSP_OBJECT.mesh.uv_layers.new()
     BSP_OBJECT.mesh.uv_layers.active = uv_layer
@@ -224,17 +488,14 @@ def create_uvs(model_scale):
                     print(f"ERROR:  No resolution found for {texture.texture_name}")
 
                 u = bsp_u / texture_res[0]
-                v = (1 - bsp_v / texture_res[1])
-
+                v = (1 - bsp_v / texture_res[1])    # Invert y-axis for Blender
 
                 uv_layer.data[loop_idx].uv = [u,v]
             except Exception as e:
-                # print(f"Skipping {texture.texture_name} (may be .atd file or non-image)")
+                print(f"Skipping {texture.texture_name} (may be .atd file or non-image)\n{e}")
                 if texture.texture_name not in skipped_textures.keys():
-                    skipped_textures[texture.texture_name] = f"{e}\n{e.__traceback__.tb_frame.f_code.co_filename}\n{e.__traceback__.tb_lineno}" + \
-                        f"\nUV1: {u1,v1}"
+                    skipped_textures[texture.texture_name] = f"{e}\n{e.__traceback__.tb_frame.f_code.co_filename}\n{e.__traceback__.tb_lineno}" + f"\nUV1: {u1,v1}"
                 continue
-
 
 
 def get_texture_images(search_from_parent):
@@ -245,7 +506,7 @@ def get_texture_images(search_from_parent):
     # instead of in a subfolder.  This option allows searching from the parent folder to find those textures.
     texture_search_folder = BSP_OBJECT.folder_path
     if search_from_parent:
-        texture_search_folder = os.path.dirname(BSP_OBJECT.folder_path)
+        texture_search_folder = Path(BSP_OBJECT.folder_path).parent
 
     print(f"Searching for appropriate texture image files in: {texture_search_folder}")
     actual_texture_path = ""
@@ -261,7 +522,7 @@ def get_texture_images(search_from_parent):
         # texture_base_path = os.path.join(BSP_OBJECT.folder_path, *t.texture_name.split('/'))
         # potential_texture_paths = [f"{texture_base_path}{ext}" for ext in valid_extensions]
         # actual_texture_path = getfile_insensitive_from_list(potential_texture_paths)
-        
+
         texture_name_casefold = t.texture_name.casefold()
         for casefolded_path, original_path in file_paths_map.items():
             if texture_name_casefold.replace('\\','/') in casefolded_path.replace('\\','/'):
@@ -271,7 +532,6 @@ def get_texture_images(search_from_parent):
         if not actual_texture_path == "":
             # Get resolution of texture
             try:
-                
                 final_texture_path = ''
                 # if actual_texture_path.endswith('.pcx'):
                 #     print(f".PCX image: {actual_texture_path}")
@@ -301,13 +561,12 @@ def get_texture_images(search_from_parent):
 
             BSP_OBJECT.texture_path_dict[t.texture_name] = final_texture_path
             # print(f"Actual path: {actual_texture_path} ----- Final path: {final_texture_path}")
-            
         else:
             print(f"ERROR: {t.texture_name}, index {i} not found (actual_texture_path blank)")
 
 
 
-def load_idtech2_bsp(bsp_path, model_scale, apply_transforms, search_from_parent):
+def load_idtech2_bsp(bsp_path, model_scale, apply_transforms, search_from_parent, lightmap_influence):
     if not os.path.isfile(bsp_path):
         bpy.context.window_manager.popup_menu(missing_file, title="Error", icon='ERROR')
         return {'FINISHED'} 
@@ -333,10 +592,13 @@ def load_idtech2_bsp(bsp_path, model_scale, apply_transforms, search_from_parent
 
         get_texture_images(search_from_parent)
 
-        faces_by_verts = get_face_and_texture_vertices(file_bytes)
-        BSP_OBJECT.mesh.from_pydata(BSP_OBJECT.vertices, [], faces_by_verts)
+        # faces_by_verts = get_face_and_texture_vertices(file_bytes)
+        get_face_and_texture_vertices(file_bytes)
+
+        print("Creating mesh...")
+        BSP_OBJECT.mesh.from_pydata(BSP_OBJECT.vertices, [], BSP_OBJECT.face_verts_list)
         create_materials()
-        
+
         main_collection = bpy.data.collections[0]
         main_collection.objects.link(BSP_OBJECT.obj)
         bpy.context.view_layer.objects.active = BSP_OBJECT.obj
@@ -344,10 +606,13 @@ def load_idtech2_bsp(bsp_path, model_scale, apply_transforms, search_from_parent
         create_uvs(model_scale)
         assign_materials()
 
+        save_all_face_lightmaps(file_bytes, float(lightmap_influence / 100))
+        apply_face_lightmaps_to_mesh()
+
         print("Applying scale...")
         BSP_OBJECT.obj.scale = (model_scale, model_scale, model_scale)
 
-        
+
         if apply_transforms:
             print("Applying transforms...")
             context = bpy.context
@@ -358,22 +623,18 @@ def load_idtech2_bsp(bsp_path, model_scale, apply_transforms, search_from_parent
             for c in ob.children:
                 c.matrix_local = mb @ c.matrix_local
 
-            ob.matrix_basis.identity()  
+            ob.matrix_basis.identity()
 
         BSP_OBJECT.mesh.update()
-
-
-
 
 
     except Exception as e:
         print(f"ERROR loading .BSP file: {e}")
         print(e.__traceback__.tb_frame.f_code.co_filename)
         print(f"LINE: {e.__traceback__.tb_lineno}")
-        
+
     return {'FINISHED'}
 
 
 
 
-    

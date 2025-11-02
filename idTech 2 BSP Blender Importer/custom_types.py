@@ -1,6 +1,6 @@
 from dataclasses import dataclass, fields
 from typing import List, Any
-
+from pathlib import Path
 
 
 ################# Data types are not always the "C" types, since shorts, etc... are meaningless in Python
@@ -9,7 +9,7 @@ from typing import List, Any
 class bsp_face:
     plane: int                  # Index of the plane the face is parallel to
     plane_side: int             # Set if the normal is parallel to the plane normal
-    
+
     first_edge: int             # Index of the first edge (in the face edge array)
     num_edges: int              # Number of consecutive edges (in the face edge array)
 
@@ -98,9 +98,9 @@ class bsp_node:
     plane: int                  # Index of the plane that splits this node
     front_child: int            # Index of the front child Node or Leaf (NEGATIVE value indicates Leaf)
     back_child: int             # Index of the back child Node or Leaf (NEGATIVE value indicates Leaf)
-    
+
     # Bounding box defined by 2 points, the diagonal of a cube
-    bbox_min: bsp_vertex        
+    bbox_min: bsp_vertex
     bbox_max: bsp_vertex
 
     first_face: int             # Index of the first face (in the face array)
@@ -139,7 +139,7 @@ class bsp_header:
 
     entity_offset: int
     entity_length: int
-    
+
     planes_offset: int
     planes_length: int
 
@@ -207,8 +207,10 @@ class BSP_OBJECT(object):
     faces = list()
     textures = list()
 
+    # face_vert_list = list()
+    face_verts_list = list()
     vert_texture_dict = dict()
-    
+
     texture_path_dict = dict()
     material_texture_dict = dict()
     texture_material_index_dict = dict()
@@ -217,10 +219,5 @@ class BSP_OBJECT(object):
     # store ids of textures that are referred to from other textures
     # these are for animation, and beyond the current intent of the plugin/blender
     animation_textures = list()
+    lightmap_folder = Path()
 
-
-
-
-
-            
-            

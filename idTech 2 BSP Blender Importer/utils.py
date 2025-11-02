@@ -23,9 +23,9 @@ def split_path_all_parts(path):
 def getfile_insensitive_from_list(potential_paths):
     # Create a dictionary to map casefolded paths to their original case
     path_dict = {path.casefold(): path for path in potential_paths}
-    
+
     for path in potential_paths:
-        
+
         if os.path.isfile(path):
             # print(f"Original path found: {path}")
             return path

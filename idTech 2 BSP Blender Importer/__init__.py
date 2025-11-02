@@ -2,7 +2,7 @@ bl_info = {
     "name": "idTech 2 BSP Importer",
     "author": "GeneralProtectionFault",
     "version": (1,2,2),
-    "blender": (4,3,0),
+    "blender": (3,6,0),
     "location": "File > Import > idTech 2 Quake II/Anachronox (.BSP)",
     "warning": "",
     "github_url": "https://github.com/GeneralProtectionFault/idTech-2-BSP-Blender-Importer",
@@ -11,7 +11,7 @@ bl_info = {
 
 
 from bpy_extras.io_utils import ImportHelper
-from bpy.props import BoolProperty, StringProperty
+from bpy.props import BoolProperty, StringProperty, IntProperty
 import bpy
 import os
 import sys
@@ -46,7 +46,7 @@ else:
 try:
     # upgrade pip
     subprocess.call([python_exe, "-m", "ensurepip"])
-    
+
     # This doesn't jive well with Blender's Python environment for whatever reason...
     # subprocess.call([python_exe, "-m", "pip", "install", "--upgrade", "pip"])
 except Exception as argument:
@@ -78,7 +78,7 @@ class ImportBSP(bpy.types.Operator, ImportHelper):
     model_scale: bpy.props.FloatProperty(name="New Model Scale",
                                     description='Desired scale for the model.\nDefault is 1%, as idTech 2 did not consider vertex coordinates "meters" :)',
                                     default=.01)
-    
+
     apply_transforms: BoolProperty(name="Apply transforms",
                                         description="Applies the previous transforms.",
                                         default=True)
@@ -88,9 +88,12 @@ class ImportBSP(bpy.types.Operator, ImportHelper):
                                         In this case, all files under the PARENT folder from the .BSP will be searched.""",
                                         default=False)
 
+    lightmap_influence: IntProperty(name="Percentage influence the lightmaps will have", default=100)
+
+
     def execute(self, context):
         try:
-            return load_idtech2_bsp(self.filepath, self.model_scale, self.apply_transforms, self.search_from_parent)
+            return load_idtech2_bsp(self.filepath, self.model_scale, self.apply_transforms, self.search_from_parent, self.lightmap_influence)
         except Exception as argument:
             self.report({'ERROR'}, str(argument))
 
@@ -105,7 +108,7 @@ classes = [
 
 def register():
     bpy.types.TOPBAR_MT_file_import.append(menu_func_import)
-    
+
     for cls in classes:
         print(f'Registering: {cls}')
         bpy.utils.register_class(cls)
@@ -113,7 +116,7 @@ def register():
 
 def unregister():
     bpy.types.TOPBAR_MT_file_import.remove(menu_func_import)
-    
+
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)
 
