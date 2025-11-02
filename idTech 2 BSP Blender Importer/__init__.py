@@ -88,12 +88,16 @@ class ImportBSP(bpy.types.Operator, ImportHelper):
                                         In this case, all files under the PARENT folder from the .BSP will be searched.""",
                                         default=False)
 
-    lightmap_influence: IntProperty(name="Percentage influence the lightmaps will have", default=100)
+    apply_lightmaps: BoolProperty(name="Apply Lightmaps", default=True)
+
+    lightmap_influence: IntProperty(name="Lightmap Influence", description="""Quake II will need full lightmaps, but other games, like Anachronox, apparently
+                                        added lighting in other ways, so full lightmaps is, practically speaking, black. Adjust this to compensate if desired.""",
+                                        min=0, max=100, default=100)
 
 
     def execute(self, context):
         try:
-            return load_idtech2_bsp(self.filepath, self.model_scale, self.apply_transforms, self.search_from_parent, self.lightmap_influence)
+            return load_idtech2_bsp(self.filepath, self.model_scale, self.apply_transforms, self.search_from_parent, self.apply_lightmaps, self.lightmap_influence)
         except Exception as argument:
             self.report({'ERROR'}, str(argument))
 
