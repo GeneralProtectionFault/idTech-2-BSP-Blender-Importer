@@ -21,46 +21,60 @@ import stat
 from importlib import reload # required when a self-written module is imported that's edited simultaneously
 
 
-# path to python.exe
-if platform.system() == "Linux":
-    # Depending on the environment, the binary might be "python" or "python3.11", etc...
-    # Stupid...but need to "find" the python binary to avoid a crash...
-    python_bin_folder = os.path.join(sys.prefix, 'bin')
+REQUIRED_PACKAGES = ["PIL"]  # pillow is imported as PIL
 
-    # Search for binary files
-    executable = stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH
-    for filename in os.listdir(python_bin_folder):
-        full_python_path = os.path.join(python_bin_folder, filename)
-        if os.path.isfile(full_python_path):
-            st = os.stat(full_python_path)
-            mode = st.st_mode
-            # If file is an executable and contains the text "python"
-            if mode & executable and 'python' in filename:
-                # print(filename,oct(mode))
-                break
+def is_module_available(mod_name):
+    try:
+        importlib.import_module(mod_name)
+        return True
+    except Exception:
+        return False
 
-    python_exe = full_python_path
+# If all packages present, skip installation entirely
+missing = [p for p in REQUIRED_PACKAGES if not is_module_available(p)]
+if not missing:
+    # nothing to do
+    pass
 else:
-    python_exe = os.path.join(sys.prefix, 'bin', 'python.exe')
+    # find python executable inside Blender's sys.prefix/bin
+    if platform.system() == "Linux":
+        python_bin_folder = os.path.join(sys.prefix, "bin")
+        full_python_path = None
+        executable = stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH
+        if os.path.isdir(python_bin_folder):
+            for filename in os.listdir(python_bin_folder):
+                candidate = os.path.join(python_bin_folder, filename)
+                if os.path.isfile(candidate):
+                    st = os.stat(candidate)
+                    mode = st.st_mode
+                    if (mode & executable) and "python" in filename:
+                        full_python_path = candidate
+                        break
+        # fallback to sys.executable if nothing found
+        python_exe = full_python_path or sys.executable
+    else:
+        # On Windows sys.prefix/bin/python.exe may not exist; prefer sys.executable
+        python_exe = os.path.join(sys.prefix, "bin", "python.exe")
+        if not os.path.isfile(python_exe):
+            python_exe = sys.executable
 
-try:
-    # upgrade pip
-    subprocess.call([python_exe, "-m", "ensurepip"])
+    try:
+        # ensure pip is available; ensurepip can be no-op if already installed
+        subprocess.call([python_exe, "-m", "ensurepip"])
+        # optionally upgrade pip if desired (commented out because it may conflict with Blender env)
+        # subprocess.call([python_exe, "-m", "pip", "install", "--upgrade", "pip"])
+    except Exception as e:
+        print(f"Issue ensuring/upgrading pip:\n{e}")
 
-    # This doesn't jive well with Blender's Python environment for whatever reason...
-    # subprocess.call([python_exe, "-m", "pip", "install", "--upgrade", "pip"])
-except Exception as argument:
-    print(f"Issue ensuring/upgrading pip:\n{argument}")
+    # install only the missing packages
+    for pkg in missing:
+        try:
+            # install pillow (package name is 'Pillow' on pip; import name is 'PIL')
+            pip_name = "Pillow" if pkg == "PIL" else pkg
+            subprocess.call([python_exe, "-m", "pip", "install", pip_name])
+        except Exception as e:
+            print(f"ERROR: {pkg} failed to install\n{e}")
 
-
-
-# install required packages
-try:
-    subprocess.call([python_exe, "-m", "pip", "install", "pillow"])
-    # subprocess.call([python_exe, "-m", "pip", "install", "mathutils"])
-
-except ImportError as argument:
-    print(f"ERROR: Pillow/PIL failed to install\n{argument}")
 
 from .idtech2_bsp import load_idtech2_bsp
 
@@ -90,14 +104,17 @@ class ImportBSP(bpy.types.Operator, ImportHelper):
 
     apply_lightmaps: BoolProperty(name="Apply Lightmaps", default=True)
 
-    lightmap_influence: IntProperty(name="Lightmap Influence", description="""Quake II will need full lightmaps, but other games, like Anachronox, apparently
-                                        added lighting in other ways, so full lightmaps is, practically speaking, black. Adjust this to compensate if desired.""",
+    lightmap_influence: IntProperty(name="Lightmap Influence", description="""Depending on the game and the lighting, the lightmaps can sometimes make a map very
+                                        dark.  If so, this allows controlling the influence of the lightmaps.  An example case is, you want to export to a game engine,
+                                        in which case you don't always want the lighting so heavily "baked" in.""",
                                         min=0, max=100, default=100)
 
+    show_entities: BoolProperty(name="Show Entity Info", description="""If an entity has an origin/location, an empty object will be created, along with text 
+                                        for the properties""", default=False)
 
     def execute(self, context):
         try:
-            return load_idtech2_bsp(self.filepath, self.model_scale, self.apply_transforms, self.search_from_parent, self.apply_lightmaps, self.lightmap_influence)
+            return load_idtech2_bsp(self.filepath, self.model_scale, self.apply_transforms, self.search_from_parent, self.apply_lightmaps, self.lightmap_influence, self.show_entities)
         except Exception as argument:
             self.report({'ERROR'}, str(argument))
 

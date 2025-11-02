@@ -10,13 +10,14 @@ from pathlib import Path
 from .custom_types import *
 from .utils import *
 from .wal import *
+from .entities import populate_entities
 
 import PIL
 from PIL import Image, ImagePath
 
 
 SAMPLE_STEP = 16.0  # world units per lightmap sample
-pad = 1
+pad = 0
 atlas_max_width = 4096
 use_closest_for_debug = False
 flip_v = True
@@ -260,6 +261,7 @@ def create_and_assign_atlas_lightmap():
         u1 = (x + w) / atlas_w_real
         v1 = (y + h) / atlas_h_real
         rect_map[p['fi']] = (u0, v0, u1, v1, w, h)
+        # print(f"Lightmap UVs: {p['fi']} | {u1,v0,u1,v1} | width & height: {w, h}")
 
     # Fill UVs: map the simple local UVs into rects
     print("Filling UVs...")
@@ -592,6 +594,7 @@ def get_face_and_texture_vertices(bytes):
 
         face_vert_list = list()
         # vert_texture_list = list()
+        edges = list()
         for i in range(f.first_edge, f.first_edge + f.num_edges):
             # Get actual edge index from face-edge array
             edge_idx = struct.unpack("<i", bytes[BSP_OBJECT.header.face_edge_table_offset + (i*4) : BSP_OBJECT.header.face_edge_table_offset + (i*4) + 4])[0]
@@ -600,13 +603,13 @@ def get_face_and_texture_vertices(bytes):
 
             # Bear in mind this gets the INDICES of the vertices of the edge, not the coordinates (this is what the mesh from pydata function takes in)
             this_edge = BSP_OBJECT.edges[abs(edge_idx)]
+            edges.append(this_edge)
 
             # Negative number indicates drawing the edge from the 2nd point instead of the 1st
             if edge_idx < 0:
-                face_vert_list.extend(list(reversed(this_edge)))
+                face_vert_list.extend(list(reversed(this_edge)))    
             else:
                 face_vert_list.extend(this_edge)
-
 
         face_vert_list = remove_duplicates(face_vert_list)
         # Adds vertex indices to a list corresponding to the particular face
@@ -813,7 +816,7 @@ def get_texture_images(search_from_parent):
 
 
 
-def load_idtech2_bsp(bsp_path, model_scale, apply_transforms, search_from_parent, apply_lightmaps, lightmap_influence):
+def load_idtech2_bsp(bsp_path, model_scale, apply_transforms, search_from_parent, apply_lightmaps, lightmap_influence, show_entities):
     if not os.path.isfile(bsp_path):
         bpy.context.window_manager.popup_menu(missing_file, title="Error", icon='ERROR')
         return {'FINISHED'} 
@@ -859,6 +862,9 @@ def load_idtech2_bsp(bsp_path, model_scale, apply_transforms, search_from_parent
         if apply_lightmaps:
             save_all_face_lightmaps(file_bytes, float(lightmap_influence / 100))
             create_and_assign_atlas_lightmap()
+
+        if show_entities:
+            populate_entities(file_bytes, model_scale)
 
 
         print("Applying scale...")

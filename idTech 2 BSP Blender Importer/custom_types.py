@@ -220,4 +220,5 @@ class BSP_OBJECT(object):
     # these are for animation, and beyond the current intent of the plugin/blender
     animation_textures = list()
     lightmap_folder = Path()
+    lightmap_images = list()
 
