@@ -1,2 +1,4 @@
 **/__pycache__/
+bsp_env/
+.pythonv-version # pyenv
 idTech 2 BSP Blender Importer.zip
