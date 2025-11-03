@@ -22,19 +22,9 @@ atlas_max_width = 4096
 use_closest_for_debug = False
 flip_v = True
 
-def save_all_face_lightmaps(file_bytes, pct):
-    # Determine base folder: prefer current .blend directory, else temp directory
-    # if bpy.data.filepath:
-    #     base_dir = Path(bpy.path.abspath("//"))
-    # else:
-    #     base_dir = Path(bpy.app.tempdir)
-    # out_folder = base_dir / "bsp_lightmaps"
-
-    BSP_OBJECT.lightmap_folder = Path(BSP_OBJECT.folder_path) / Path(f'{BSP_OBJECT.name}_bsp_lightmaps')
-    BSP_OBJECT.lightmap_folder.mkdir(parents=True, exist_ok=True)
-
+def build_all_face_lightmaps_in_memory(file_bytes):
+    BSP_OBJECT.lightmap_images = []  # list of dicts: {'fi': int, 'img': PIL.Image, 'w':int, 'h':int}
     lm_base_offset = getattr(BSP_OBJECT.header, "lightmaps_offset", 0)
-    lm_length = getattr(BSP_OBJECT.header, "lightmaps_length", None)
     total_bytes = len(file_bytes)
 
     def get_vertex_pos(vidx):
@@ -49,10 +39,8 @@ def save_all_face_lightmaps(file_bytes, pct):
         if not vert_indices:
             continue
 
-        # get texinfo (holds u_axis/u_offset and v_axis/v_offset as provided)
         texinfo = BSP_OBJECT.textures[face.texture_info]
 
-        # compute s/t for all vertices in texel space
         s_vals = []
         t_vals = []
         for vidx in vert_indices:
@@ -71,12 +59,10 @@ def save_all_face_lightmaps(file_bytes, pct):
         width = int(max_s - min_s)
         height = int(max_t - min_t)
 
-        # skip degenerate faces
         if width <= 0 or height <= 0:
             print(f"Skipping face {fi}: degenerate lightmap size {width}x{height}")
             continue
 
-        # Read bytes from BSP lightdata lump. face.lightmap_offset is bytes per your class.
         byte_offset = lm_base_offset + face.lightmap_offset
         expected_bytes = width * height * 3
         if byte_offset < 0 or byte_offset + expected_bytes > total_bytes:
@@ -85,83 +71,32 @@ def save_all_face_lightmaps(file_bytes, pct):
 
         rgb_bytes = file_bytes[byte_offset: byte_offset + expected_bytes]
 
-        # Convert to PIL image (RGB). The data is assumed row-major, tightly packed:
-        # Quake stores lightmaps with rows in increasing t; you may need to flip vertically if it looks inverted.
         img = Image.frombytes('RGB', (width, height), rgb_bytes)
 
-        # Optional flip (uncomment if needed):
-        # img = img.transpose(Image.FLIP_TOP_BOTTOM)
+        # optionally flip vertically to match Quake rows
+        if flip_v:
+            img = img.transpose(Image.FLIP_TOP_BOTTOM)
 
-        if pct < 1.0:
-            # Convert to float array to do accurate blending
-            # Use 'RGBA' to ease working in Pillow without external libs
-            rgb_img = img.convert('RGBA')  # adds opaque alpha
-            # Get pixel data as a list of tuples (R,G,B,A)
-            pixels = list(rgb_img.getdata())
-            blended = []
-            inv = 1.0 - pct
-            # Precompute scale for integer math
-            for (r, g, b, a) in pixels:
-                # normalize
-                rn = r / 255.0
-                gn = g / 255.0
-                bn = b / 255.0
-                # blend toward white: out = inv*1.0 + pct * color
-                out_r = inv * 1.0 + pct * rn
-                out_g = inv * 1.0 + pct * gn
-                out_b = inv * 1.0 + pct * bn
-                # convert back to 0..255 integers, clamp
-                blended.append((
-                    int(max(0, min(255, round(out_r * 255)))),
-                    int(max(0, min(255, round(out_g * 255)))),
-                    int(max(0, min(255, round(out_b * 255)))),
-                    a
-                ))
-            # Put blended pixels back and convert to RGB
-            rgb_img.putdata(blended)
-            img = rgb_img.convert('RGB')
+        BSP_OBJECT.lightmap_images.append({'fi': fi, 'img': img, 'w': img.width, 'h': img.height})
+
+    print(f"Built {len(BSP_OBJECT.lightmap_images)} in-memory face lightmaps")
+    # return BSP_OBJECT.lightmap_images
 
 
 
-        out_name = f"face_{fi:04d}_lightmap.png"
-        out_path = BSP_OBJECT.lightmap_folder / out_name
-        img.save(out_path, format="PNG")
-
-    print(f"Saved face lightmaps to: {BSP_OBJECT.lightmap_folder}")
-
-
-def create_and_assign_atlas_lightmap():
-    print("Creating atlas lightmap...")
-    lm_folder = BSP_OBJECT.lightmap_folder
-    if not lm_folder or not lm_folder.exists():
-        print("Lightmap folder not found; aborting atlas build.")
-        return
-
-    # Collect face images
-    print("Getting individual lightmap images...")
-    face_images = []
-    for fi, face in enumerate(BSP_OBJECT.faces):
-        img_path = lm_folder / f"face_{fi:04d}_lightmap.png"
-        if img_path.exists():
-            try:
-                im = Image.open(str(img_path)).convert('RGBA')
-                w, h = im.size
-                if w > 0 and h > 0:
-                    face_images.append({'fi': fi, 'img': im, 'w': w, 'h': h})
-            except Exception as e:
-                print(f"Failed to open lightmap for face {fi}: {e}")
-
+def create_and_assign_atlas_lightmap(influence_pct):
+    print("Creating atlas lightmap (in-memory only)...")
+    face_images = getattr(BSP_OBJECT, 'lightmap_images', None)
     if not face_images:
-        print("No face lightmaps found; skipping atlas creation.")
+        print("No in-memory lightmaps found on BSP_OBJECT.lightmap_images; aborting.")
         return
 
-    # Simple shelf packer: sort by height desc
+    # Ensure Pillow RGBA and w/h present
+    face_images = [{'fi': r['fi'], 'img': r['img'].convert('RGBA'), 'w': r.get('w', r['img'].width), 'h': r.get('h', r['img'].height)} for r in face_images]
+
+    # packer prep
     face_images.sort(key=lambda r: r['h'], reverse=True)
-
-    # helpers
-    def next_pow2(x):
-        return 1 << (x - 1).bit_length()
-
+    def next_pow2(x): return 1 << (x - 1).bit_length()
     max_w = max(r['w'] for r in face_images)
     atlas_w = min(atlas_max_width, next_pow2(max_w))
     atlas_w = max(atlas_w, 64)
@@ -174,18 +109,16 @@ def create_and_assign_atlas_lightmap():
     # pack rects into rows; do NOT assume atlas_h yet
     print("Packing atlas rectangles...")
     for r in face_images:
-        w = r['w'] + 2 * pad  # account for padding when placing
+        w = r['w'] + 2 * pad
         h = r['h'] + 2 * pad
         # if rect (including pad) wider than atlas, try to expand atlas_w (within max)
         if w > atlas_w:
             if w <= atlas_max_width:
-                atlas_w = next_pow2(w)
-                atlas_w = min(atlas_w, atlas_max_width)
+                atlas_w = min(atlas_max_width, next_pow2(w))
             else:
                 print(f"Face {r['fi']} too wide for atlas_max_width; skipping")
                 continue
         if cur_x + w > atlas_w:
-            # new row
             cur_y += row_h
             cur_x = 0
             row_h = 0
@@ -204,41 +137,33 @@ def create_and_assign_atlas_lightmap():
     for p in placements:
         paste_x = p['x'] + pad
         paste_y = p['y'] + pad
-        atlas_img_pil.paste(p['img'], (paste_x, paste_y))
+        atlas_img_pil.paste(p['img'], (paste_x, paste_y), p['img'])
 
-    # Save atlas to lightmap folder (loadable by Blender)
+    # Save single atlas to disk (allowed) and load into Blender
     atlas_name = f"{BSP_OBJECT.name}_atlas"
+    BSP_OBJECT.lightmap_folder = BSP_OBJECT.lightmap_folder or (Path(BSP_OBJECT.folder_path) / Path(f'{BSP_OBJECT.name}_bsp_lightmaps'))
+    BSP_OBJECT.lightmap_folder.mkdir(parents=True, exist_ok=True)
     atlas_path = Path(BSP_OBJECT.lightmap_folder) / f"{atlas_name}.png"
+
+    print(f"SAVING: {atlas_path}")
     atlas_img_pil.save(str(atlas_path), format='PNG')
 
-
-    print("Loading atlas image into Blender...")
-    atlas_bpy = bpy.data.images.get(atlas_name)
-    if atlas_bpy is None:
-        try:
-            atlas_bpy = bpy.data.images.load(str(atlas_path), check_existing=True)
-            atlas_bpy.name = atlas_name
-        except Exception as e:
-            print(f"Failed to load atlas image into Blender: {e}")
-            return
-    else:
-        try:
-            atlas_bpy.filepath = str(atlas_path)
-            atlas_bpy.reload()
-        except:
-            pass
+    atlas_bpy = None
+    try:
+        atlas_bpy = bpy.data.images.load(str(atlas_path), check_existing=True)
+        atlas_bpy.name = atlas_name
+    except Exception as e:
+        print(f"Failed to load atlas image into Blender: {e}")
+        return
 
     atlas_bpy.colorspace_settings.name = 'sRGB'
-    # set interpolation for debugging if requested
     if use_closest_for_debug:
         try:
             atlas_bpy.use_alpha = True
         except:
             pass
 
-    # Ensure LightmapUV exists
-    # mesh = BSP_OBJECT.obj.data
-    print("Creating lightmap UV...")
+    # Create LightmapUV
     mesh = BSP_OBJECT.mesh
     lm_uv_name = "LightmapUV"
     if lm_uv_name in mesh.uv_layers:
@@ -247,8 +172,6 @@ def create_and_assign_atlas_lightmap():
         lm_uv = mesh.uv_layers.new(name=lm_uv_name)
     mesh.uv_layers.active = lm_uv
 
-    # Build normalized rect_map using actual atlas size
-    print("Building normalized rect_map...")
     atlas_w_real, atlas_h_real = atlas_img_pil.size
     rect_map = {}
     for p in placements:
@@ -261,10 +184,7 @@ def create_and_assign_atlas_lightmap():
         u1 = (x + w) / atlas_w_real
         v1 = (y + h) / atlas_h_real
         rect_map[p['fi']] = (u0, v0, u1, v1, w, h)
-        # print(f"Lightmap UVs: {p['fi']} | {u1,v0,u1,v1} | width & height: {w, h}")
 
-    # Fill UVs: map the simple local UVs into rects
-    print("Filling UVs...")
     uv_data = lm_uv.data
     for poly in mesh.polygons:
         fi = poly.index
@@ -338,8 +258,11 @@ def create_and_assign_atlas_lightmap():
         mix_node.inputs['Fac'].default_value = 1.0
 
         marker = nodes.new('ShaderNodeValue')
-        marker.name = "LM_ATLAS_Marker"
-        marker.outputs[0].default_value = 1.0
+        marker.name = "Lightmap_Infuence"
+        marker.label = "Lightmap Influence"
+        marker.outputs[0].default_value = 1.0 * influence_pct
+
+        links.new(marker.outputs[0], mix_node.inputs['Fac'])
 
         # find current incoming link to Principled Base Color, if any
         base_color_input = principled.inputs.get('Base Color')
@@ -860,8 +783,9 @@ def load_idtech2_bsp(bsp_path, model_scale, apply_transforms, search_from_parent
         assign_materials()
 
         if apply_lightmaps:
-            save_all_face_lightmaps(file_bytes, float(lightmap_influence / 100))
-            create_and_assign_atlas_lightmap()
+            # save_all_face_lightmaps(file_bytes, float(lightmap_influence / 100))
+            build_all_face_lightmaps_in_memory(file_bytes)
+            create_and_assign_atlas_lightmap(float(lightmap_influence / 100))
 
         if show_entities:
             populate_entities(file_bytes, model_scale)
