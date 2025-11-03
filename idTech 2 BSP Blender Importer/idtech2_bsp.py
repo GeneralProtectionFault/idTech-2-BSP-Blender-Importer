@@ -156,7 +156,7 @@ def create_and_assign_atlas_lightmap(influence_pct):
         print(f"Failed to load atlas image into Blender: {e}")
         return
 
-    atlas_bpy.colorspace_settings.name = 'sRGB'
+    atlas_bpy.colorspace_settings.name = 'Non-Color'    # Multiply action needs to be linear, lightmap represents intensity, not actual "color"
     if use_closest_for_debug:
         try:
             atlas_bpy.use_alpha = True
