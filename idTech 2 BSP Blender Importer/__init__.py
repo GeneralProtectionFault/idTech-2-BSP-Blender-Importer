@@ -102,11 +102,11 @@ class ImportBSP(bpy.types.Operator, ImportHelper):
                                         In this case, all files under the PARENT folder from the .BSP will be searched.""",
                                         default=False)
 
-    apply_lightmaps: BoolProperty(name="Apply Lightmaps", default=True)
+    apply_lightmaps: BoolProperty(name="Apply Lightmaps", default=False)
 
     lightmap_influence: IntProperty(name="Lightmap Influence", description="""Depending on the game and the lighting, the lightmaps can sometimes make a map very
-                                        dark.  If so, this allows controlling the influence of the lightmaps.  An example case is, you want to export to a game engine,
-                                        in which case you don't always want the lighting so heavily "baked" in.""",
+                                        dark.  If so, this allows controlling the influence of the lightmaps.  The materials have a "Lightmap Influence value
+                                        node which can be adjusted between 0 and 1 at any time.""",
                                         min=0, max=100, default=100)
 
     show_entities: BoolProperty(name="Show Entity Info", description="""If an entity has an origin/location, an empty object will be created, along with text 
