@@ -207,18 +207,35 @@ class BSP_OBJECT(object):
     faces = list()
     textures = list()
 
-    # face_vert_list = list()
     face_verts_list = list()
-    vert_texture_dict = dict()
+    bsp_face_indices = list()
 
     texture_path_dict = dict()
     material_texture_dict = dict()
     texture_material_index_dict = dict()
     texture_resolution_dict = dict()
 
-    # store ids of textures that are referred to from other textures
-    # these are for animation, and beyond the current intent of the plugin/blender
     animation_textures = list()
     lightmap_folder = Path()
     lightmap_images = list()
 
+    @classmethod
+    def reset(cls):
+        cls.folder_path = ""
+        cls.name = ""
+        cls.obj = {}
+        cls.mesh = {}
+        cls.header = {}
+        cls.vertices = []
+        cls.edges = []
+        cls.faces = []
+        cls.textures = []
+        cls.face_verts_list = []
+        cls.bsp_face_indices = []
+        cls.texture_path_dict = {}
+        cls.material_texture_dict = {}
+        cls.texture_material_index_dict = {}
+        cls.texture_resolution_dict = {}
+        cls.animation_textures = []
+        cls.lightmap_folder = Path()
+        cls.lightmap_images = []

@@ -6,6 +6,7 @@ import math
 import numpy as np
 from collections import defaultdict
 from pathlib import Path
+import traceback
 
 from .custom_types import *
 from .utils import *
@@ -21,6 +22,7 @@ pad = 0
 atlas_max_width = 4096
 use_closest_for_debug = False
 flip_v = True
+
 
 def build_all_face_lightmaps_in_memory(file_bytes):
     BSP_OBJECT.lightmap_images = []  # list of dicts: {'fi': int, 'img': PIL.Image, 'w':int, 'h':int}
@@ -81,7 +83,6 @@ def build_all_face_lightmaps_in_memory(file_bytes):
 
     print(f"Built {len(BSP_OBJECT.lightmap_images)} in-memory face lightmaps")
     # return BSP_OBJECT.lightmap_images
-
 
 
 def create_and_assign_atlas_lightmap(influence_pct):
@@ -221,11 +222,12 @@ def create_and_assign_atlas_lightmap(influence_pct):
         if not mat.use_nodes:
             mat.use_nodes = True
         tree = mat.node_tree
+
         nodes = tree.nodes
         links = tree.links
 
         # Detect if we've already applied the patch
-        if nodes.get("LM_ATLAS_Marker"):
+        if nodes.get("LM_Atlas_Tex"):
             continue
 
         # Find Principled BSDF
@@ -293,161 +295,6 @@ def create_and_assign_atlas_lightmap(influence_pct):
     print(f"Built lightmap atlas ({atlas_w_real}x{atlas_h_real}), applied LightmapUV and patched materials. Atlas image: {atlas_bpy.name}")
 
 
-def apply_face_lightmaps_to_mesh():
-    # Determine folder where face lightmaps were saved
-    # if bpy.data.filepath:
-    #     base_dir = Path(bpy.path.abspath("//"))
-    # else:
-    #     base_dir = Path(bpy.app.tempdir)
-
-    lm_folder = BSP_OBJECT.lightmap_folder
-
-    obj = BSP_OBJECT.obj
-    mesh = obj.data
-
-    # Ensure a UV map for lightmaps exists; we'll create per-face UVs that span 0..1
-    lm_uv_name = "LightmapUV"
-    if lm_uv_name in mesh.uv_layers:
-        lm_uv = mesh.uv_layers[lm_uv_name]
-    else:
-        lm_uv = mesh.uv_layers.new(name=lm_uv_name)
-
-    # For convenience, ensure we have an active UV map (not strictly required)
-    mesh.uv_layers.active = lm_uv
-
-    # Load all per-face images into Blender.images with predictable names
-    # Map: face_index -> bpy.data.images image
-    face_image_map = {}
-    for poly in mesh.polygons:
-        fi = poly.index
-        img_path = lm_folder / f"face_{fi:04d}_lightmap.png"
-        if img_path.exists():
-            try:
-                img = bpy.data.images.load(str(img_path), check_existing=True)
-                face_image_map[fi] = img
-            except Exception as e:
-                print(f"Failed loading image for face {fi}: {e}")
-
-    # For each polygon that has a lightmap image, set its UVs to cover 0..1 and create a material that uses that image
-    # We'll create a material per polygon that has an image (to keep it simple)
-    for poly in mesh.polygons:
-        fi = poly.index
-        img = face_image_map.get(fi)
-        if not img:
-            continue
-
-        # set UVs for this polygon to full-quad (0..1) according to polygon loop order
-        # polygon.loop_start..loop_start+loop_total are indices into mesh.loops and uv layer data
-        loops_start = poly.loop_start
-        loops_total = poly.loop_total
-        # compute uv coords for each loop (we'll map the polygon's bounds to 0..1)
-        # simplest: map each loop vertex to a trivial UV layout covering [0,1] using barycentric-ish mapping:
-        # assign UVs cyclically so triangles/quads map reasonably
-        uv_layer = lm_uv.data
-        if loops_total == 3:
-            uvs = [(0.0,0.0),(1.0,0.0),(0.0,1.0)]
-        elif loops_total == 4:
-            uvs = [(0.0,0.0),(1.0,0.0),(1.0,1.0),(0.0,1.0)]
-        else:
-            # For n-gons, distribute around unit square perimeter (approx)
-            uvs = []
-            for i in range(loops_total):
-                frac = i / max(1, loops_total-1)
-                uvs.append((frac, frac))  # approximate; arbitrary but consistent
-        for li in range(loops_total):
-            uv_layer[loops_start + li].uv = uvs[li]
-
-        # Create material for this face that combines base material with this lightmap as multiply
-        base_texinfo_idx = BSP_OBJECT.faces[fi].texture_info
-        base_texture_name = BSP_OBJECT.textures[base_texinfo_idx].texture_name
-        base_mat_index = BSP_OBJECT.texture_material_index_dict.get(base_texture_name)
-
-        # Get the base material (created earlier) by index
-        if base_mat_index is None or base_mat_index >= len(BSP_OBJECT.obj.data.materials):
-            # fallback: create a basic material
-            base_mat = bpy.data.materials.new(name=f"M_{base_texture_name}_fallback")
-            base_mat.use_nodes = True
-        else:
-            base_mat = BSP_OBJECT.obj.data.materials[base_mat_index]
-
-        # Duplicate the base material so we can assign this face a unique lightmap image without affecting others
-        new_mat = base_mat.copy()
-        new_mat.name = f"{base_mat.name}_face_{fi:04d}"
-        new_mat.use_nodes = True
-        node_tree = new_mat.node_tree
-        nodes = node_tree.nodes
-        links = node_tree.links
-
-        # Ensure Principled BSDF exists
-        principled = None
-        for n in nodes:
-            if n.type == 'BSDF_PRINCIPLED':
-                principled = n
-                break
-        if not principled:
-            principled = nodes.new('ShaderNodeBsdfPrincipled')
-            output = None
-            for n in nodes:
-                if n.type == 'OUTPUT_MATERIAL':
-                    output = n
-                    break
-            if output:
-                links.new(principled.outputs['BSDF'], output.inputs['Surface'])
-
-        # Create Image Texture node for the lightmap
-        lm_tex_node = nodes.new('ShaderNodeTexImage')
-        lm_tex_node.image = img
-        # set the UV map to our LightmapUV
-        lm_tex_node.extension = 'CLIP'
-        # Create UV Map node to select LightmapUV
-        uv_map_node = nodes.new('ShaderNodeUVMap')
-        uv_map_node.uv_map = lm_uv_name
-        links.new(uv_map_node.outputs['UV'], lm_tex_node.inputs['Vector'])
-
-        # Create Mix node to multiply base color by lightmap (use Multiply = MixRGB with Fac=1 and blend type MULTIPLY)
-        mix_node = nodes.new('ShaderNodeMixRGB')
-        mix_node.blend_type = 'MULTIPLY'
-        mix_node.inputs['Fac'].default_value = 1.0
-
-        # Find existing base texture node in the node tree (if present) to connect into mix
-        base_color_node = None
-        for n in nodes:
-            if n.type == 'TEX_IMAGE' and n.image and n.image.filepath == getattr(base_mat.node_tree.nodes.get('Image Texture'), 'image', None):
-                base_color_node = n
-                break
-        # Simpler: create a new Image Texture node for the base texture if none found, using BSP_OBJECT.texture_path_dict
-        base_img = None
-        texture_path = BSP_OBJECT.texture_path_dict.get(base_texture_name)
-        if texture_path:
-            try:
-                base_img = bpy.data.images.load(texture_path, check_existing=True)
-            except:
-                base_img = None
-        if base_img:
-            base_tex_node = nodes.new('ShaderNodeTexImage')
-            base_tex_node.image = base_img
-            # connect base_tex_node color to mix color1
-            links.new(base_tex_node.outputs['Color'], mix_node.inputs['Color1'])
-        else:
-            # fallback: use a white color
-            rgb_node = nodes.new('ShaderNodeRGB')
-            rgb_node.outputs[0].default_value = (1.0,1.0,1.0,1.0)
-            links.new(rgb_node.outputs[0], mix_node.inputs['Color1'])
-
-        # connect lightmap into Color2 of mix
-        links.new(lm_tex_node.outputs['Color'], mix_node.inputs['Color2'])
-
-        # connect mix output to Principled Base Color
-        links.new(mix_node.outputs['Color'], principled.inputs['Base Color'])
-
-        # Append new material to object and assign to polygon
-        BSP_OBJECT.obj.data.materials.append(new_mat)
-        new_index = len(BSP_OBJECT.obj.data.materials) - 1
-        poly.material_index = new_index
-
-    print("Applied per-face lightmaps (one material per face with lightmap).")
-
-
 def load_header(bytes):
     arguments = struct.unpack(f"<{'i'*40}", bytes[:160])
     return bsp_header(*arguments)
@@ -467,7 +314,7 @@ def load_file(path):
 
 def load_verts(bytes, model_scale):
     num_verts = len(bytes) / 12
-    all_verts = list()
+    BSP_OBJECT.vertices = list()
     for i in range(int(num_verts)):
         vertex = bsp_vertex(*list(struct.unpack("<fff", bytes[12*i : 12*i+12])))
         # Scale the vertex
@@ -476,22 +323,20 @@ def load_verts(bytes, model_scale):
         #     y=vertex.y * model_scale,
         #     z=vertex.z * model_scale
         # )
-        all_verts.append(vertex)
-    return all_verts
+        BSP_OBJECT.vertices.append(vertex)
 
 
 def load_edges(bytes):
     num_edges = len(bytes) / 4
-    all_edges = list()
+    BSP_OBJECT.edges = list()
     for i in range(int(num_edges)):
         edge = bsp_edge(*list(struct.unpack("<HH", bytes[4*i : 4*i+4])))
-        all_edges.append(edge)
-    return all_edges
+        BSP_OBJECT.edges.append(edge)
 
 
 def load_faces(bytes):
     num_faces = len(bytes) / 20
-    all_faces = list()
+    BSP_OBJECT.faces = list()
     for i in range(int(num_faces)):
         unpacked_bytes = list(struct.unpack("<HHIHHBBBBI", bytes[20*i : 20*i+20]))
         face = bsp_face(
@@ -503,8 +348,7 @@ def load_faces(bytes):
             lightmap_styles = unpacked_bytes[5:9],          # This is an array/list, the reason for handling the properties individually
             lightmap_offset = unpacked_bytes[9]
         )
-        all_faces.append(face)
-    return all_faces
+        BSP_OBJECT.faces.append(face)
 
 
 def get_face_and_texture_vertices(bytes):
@@ -512,11 +356,8 @@ def get_face_and_texture_vertices(bytes):
     mesh.from_pydata needs the vertex indices of the faces, which will be returned from this.
     The UVs need to be calculated per vertex, using the coordinates.
     """
-    faces_by_verts = list()
     for idx, f in enumerate(BSP_OBJECT.faces):
-
         face_vert_list = list()
-        # vert_texture_list = list()
         edges = list()
         for i in range(f.first_edge, f.first_edge + f.num_edges):
             # Get actual edge index from face-edge array
@@ -530,22 +371,21 @@ def get_face_and_texture_vertices(bytes):
 
             # Negative number indicates drawing the edge from the 2nd point instead of the 1st
             if edge_idx < 0:
-                face_vert_list.extend(list(reversed(this_edge)))    
+                face_vert_list.extend(list(reversed(this_edge)))
             else:
                 face_vert_list.extend(this_edge)
 
         face_vert_list = remove_duplicates(face_vert_list)
         # Adds vertex indices to a list corresponding to the particular face
         # Used for creating mesh from pydata
-        BSP_OBJECT.face_verts_list.append(face_vert_list) 
+        BSP_OBJECT.face_verts_list.append(face_vert_list)
+
+        # List to be used after mesh creation to create an attribute, tying the polygons to the correct face index for material assigning
+        BSP_OBJECT.bsp_face_indices.append(idx)
 
         # Now that we have vertices associated with faces, while we're here, get the texture_info from the face,
         # and associate the vertices with that texture as well, for assigning UVs later
         face_texture = BSP_OBJECT.textures[f.texture_info]
-        for vert_idx in face_vert_list:
-            BSP_OBJECT.vert_texture_dict[vert_idx] = face_texture
-
-    # return faces_by_verts
 
 
 def load_textures(bytes):
@@ -564,71 +404,109 @@ def load_textures(bytes):
             next_texinfo = unpacked_bytes[42]
         )
 
-        all_textures.append(texture_info)
+        BSP_OBJECT.textures.append(texture_info)
 
     # Note animation textures
-    for t in all_textures:
+    for t in BSP_OBJECT.textures:
         if t.next_texinfo != -1:
             BSP_OBJECT.animation_textures.append(t.next_texinfo)
+            print(f"This texture: {t}")
             print(f"Adding animation texture to list: {t.next_texinfo}")
-    return all_textures
+
+
+def collect_nonfirst_linked_per_sequence():
+    result = []
+    in_sequence = False
+    for i, tex in enumerate(BSP_OBJECT.textures):
+        if tex.next_texinfo != -1:
+            if not in_sequence:
+                # this is the first in a new sequence — skip it and mark sequence started
+                in_sequence = True
+            else:
+                result.append(i)  # later items in same sequence
+        else:
+            in_sequence = False  # sequence ended
+    return result
 
 
 def create_materials():
-    distinct_texture_names = {tex.texture_name for tex in BSP_OBJECT.textures}
-    for i, t in enumerate(distinct_texture_names):
+    # distinct_texture_names = {tex.texture_name for tex in BSP_OBJECT.textures}
+    excluded_animation_texture_indices = collect_nonfirst_linked_per_sequence()
+    # print(f"EXCLUDED ANIMATION TEXTURES: {excluded_animation_texture_indices}")
+
+    unique_material_names = list({f"M_{tex.texture_name}" for tex in BSP_OBJECT.textures})
+
+    # If importing multiple times, axe the old material, which will still exist globally, even if the object was deleted.
+    for material_name in unique_material_names:
+        if material_name in bpy.data.materials:
+            material = bpy.data.materials[material_name]
+            bpy.data.materials.remove(material)
+
+    for i in range(len(BSP_OBJECT.textures)):
+        t = BSP_OBJECT.textures[i]
+        if i in excluded_animation_texture_indices:
+            print(f"Skipping animation frame texture: {i}: {t.texture_name}")
+            continue
+
         try:
-            material_name = f"M_{t}"
+            material_name = f"M_{t.texture_name}"
 
-            # Create the material
-            mat = bpy.data.materials.new(name = material_name)
+            if not material_name in bpy.data.materials:
+                # Create the material
+                print(f"Creating material: {material_name}")
+                mat = bpy.data.materials.new(name = material_name)
 
-            mat.use_nodes = True
-            # Create the shader node
-            bsdf = mat.node_tree.nodes['Principled BSDF']
+                mat.use_nodes = True
+                # Create the shader node
+                bsdf = mat.node_tree.nodes['Principled BSDF']
 
-            if (bpy.app.version < (4,0,0)):
-                bsdf.inputs['Specular'].default_value = 0
-            else:
-                bsdf.inputs['Specular IOR Level'].default_value = 0
+                if (bpy.app.version < (4,0,0)):
+                    bsdf.inputs['Specular'].default_value = 0
+                else:
+                    bsdf.inputs['Specular IOR Level'].default_value = 0
 
-            # Create the texture image node
-            tex_image = mat.node_tree.nodes.new('ShaderNodeTexImage')
-            tex_image.image = bpy.data.images.load(BSP_OBJECT.texture_path_dict[t])
-            mat.node_tree.links.new(tex_image.outputs['Color'], bsdf.inputs['Base Color'])
+                # Create the texture image node
+                tex_image = mat.node_tree.nodes.new('ShaderNodeTexImage')
+                tex_image.image = bpy.data.images.load(BSP_OBJECT.texture_path_dict[t.texture_name])
+                mat.node_tree.links.new(tex_image.outputs['Color'], bsdf.inputs['Base Color'])
 
-            # Add the new material to the mesh/object
-            BSP_OBJECT.obj.data.materials.append(mat)
+                # Add the new material to the mesh/object
+                BSP_OBJECT.obj.data.materials.append(mat)
 
-            # Keep track of the material index for this texture name
-            # Later, it will be used to associate w/ the faces
-            # BSP_OBJECT.texture_material_index_dict[t] = bpy.data.materials.find(mat.name)
-            BSP_OBJECT.texture_material_index_dict[t] = i
+                BSP_OBJECT.texture_material_index_dict[t.texture_name] = bpy.data.materials.find(material_name)
+
         except Exception as e:
-            print(f"ERROR creating material for texture: {t}")
+            print(f"ERROR creating material for texture: {t.texture_name}\n{e}")
+            traceback.print_exc()
+        else:
+            # print(f"Material already exists for {t.texture_name}, skipping...")
+            continue
 
 
 def assign_materials():
     bpy.context.tool_settings.mesh_select_mode = [False, False, True]
 
-    for material in BSP_OBJECT.obj.data.materials:
-        for face in BSP_OBJECT.mesh.polygons:
-            texture_idx = BSP_OBJECT.faces[face.index].texture_info
-            texture_name = BSP_OBJECT.textures[texture_idx].texture_name
-            found_material_idx = BSP_OBJECT.texture_material_index_dict[texture_name]
+    # for material in BSP_OBJECT.obj.data.materials:
+    for face in BSP_OBJECT.mesh.polygons:
+        bsp_index = BSP_OBJECT.mesh.attributes["bsp_face_index"].data[face.index].value
 
-            face.material_index = found_material_idx
+        texture_idx = BSP_OBJECT.faces[bsp_index].texture_info
+        texture_name = BSP_OBJECT.textures[texture_idx].texture_name
+        found_material_idx = BSP_OBJECT.texture_material_index_dict[texture_name]
+
+        material = bpy.data.materials.get(f"M_{texture_name}")
+        slot_index = BSP_OBJECT.obj.data.materials[:].index(material)
+
+        BSP_OBJECT.obj.data.polygons[face.index].material_index = slot_index
+        # face.material_index = found_material_idx
 
 
 def create_uvs(model_scale):
     print("Creating UVs...")
     BSP_OBJECT.obj.select_set(True)
-    print(f"Existing UV layers: {BSP_OBJECT.mesh.uv_layers}")
 
     uv_layer = BSP_OBJECT.mesh.uv_layers.new()
     BSP_OBJECT.mesh.uv_layers.active = uv_layer
-
-    print(f"UV Layer: {uv_layer}")
 
     # Hopefully only non-image files that match the name of supposed textures...
     skipped_textures = dict()
@@ -739,7 +617,6 @@ def get_texture_images(search_from_parent):
             print(f"ERROR: {t.texture_name}, index {i} not found (actual_texture_path blank)")
 
 
-
 def load_idtech2_bsp(bsp_path, model_scale, apply_transforms, search_from_parent, apply_lightmaps, lightmap_influence, show_entities):
     if not os.path.isfile(bsp_path):
         bpy.context.window_manager.popup_menu(missing_file, title="Error", icon='ERROR')
@@ -747,7 +624,7 @@ def load_idtech2_bsp(bsp_path, model_scale, apply_transforms, search_from_parent
 
     print("Loading idtech2 .bsp...")
     try:
-        BSP_OBJECT.face_verts_list = list()
+        BSP_OBJECT.reset()
 
         file_bytes = load_file(bsp_path)
         BSP_OBJECT.folder_path = os.path.dirname(bsp_path)
@@ -762,10 +639,10 @@ def load_idtech2_bsp(bsp_path, model_scale, apply_transforms, search_from_parent
         BSP_OBJECT.mesh = bpy.data.meshes.new(object_name)
         BSP_OBJECT.obj = bpy.data.objects.new(object_name, BSP_OBJECT.mesh)
 
-        BSP_OBJECT.vertices = load_verts(file_bytes[BSP_OBJECT.header.vertices_offset : BSP_OBJECT.header.vertices_offset+BSP_OBJECT.header.vertices_length], model_scale)
-        BSP_OBJECT.edges = load_edges(file_bytes[BSP_OBJECT.header.edge_offset : BSP_OBJECT.header.edge_offset+BSP_OBJECT.header.edge_length])
-        BSP_OBJECT.textures = load_textures(file_bytes[BSP_OBJECT.header.texture_info_offset : BSP_OBJECT.header.texture_info_offset+BSP_OBJECT.header.texture_info_length])
-        BSP_OBJECT.faces = load_faces(file_bytes[BSP_OBJECT.header.faces_offset : BSP_OBJECT.header.faces_offset+BSP_OBJECT.header.faces_length])
+        load_verts(file_bytes[BSP_OBJECT.header.vertices_offset : BSP_OBJECT.header.vertices_offset+BSP_OBJECT.header.vertices_length], model_scale)
+        load_edges(file_bytes[BSP_OBJECT.header.edge_offset : BSP_OBJECT.header.edge_offset+BSP_OBJECT.header.edge_length])
+        load_textures(file_bytes[BSP_OBJECT.header.texture_info_offset : BSP_OBJECT.header.texture_info_offset+BSP_OBJECT.header.texture_info_length])
+        load_faces(file_bytes[BSP_OBJECT.header.faces_offset : BSP_OBJECT.header.faces_offset+BSP_OBJECT.header.faces_length])
 
         get_texture_images(search_from_parent)
 
@@ -774,6 +651,17 @@ def load_idtech2_bsp(bsp_path, model_scale, apply_transforms, search_from_parent
 
         print("Creating mesh...")
         BSP_OBJECT.mesh.from_pydata(BSP_OBJECT.vertices, [], BSP_OBJECT.face_verts_list)
+
+        # create an int polygon attribute and fill with our BSP face indices
+        if "bsp_face_index" in BSP_OBJECT.mesh.attributes:
+            pa = BSP_OBJECT.mesh.attributes["bsp_face_index"]
+        else:
+            pa = BSP_OBJECT.mesh.attributes.new(name="bsp_face_index", type='INT', domain='FACE')
+
+        # Sanity: mesh.polygons order is what mesh.attributes uses; we must map.
+        # We assume mesh.polygons has same length as face_verts_list; if not, handle accordingly.
+        pa.data.foreach_set("value", BSP_OBJECT.bsp_face_indices)
+
         create_materials()
 
         main_collection = bpy.data.collections[0]
@@ -813,8 +701,7 @@ def load_idtech2_bsp(bsp_path, model_scale, apply_transforms, search_from_parent
 
     except Exception as e:
         print(f"ERROR loading .BSP file: {e}")
-        print(e.__traceback__.tb_frame.f_code.co_filename)
-        print(f"LINE: {e.__traceback__.tb_lineno}")
+        traceback.print_exc()
 
     return {'FINISHED'}
 
