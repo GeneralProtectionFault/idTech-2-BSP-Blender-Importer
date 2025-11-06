@@ -3,6 +3,8 @@ from dataclasses import dataclass, fields
 import struct
 import os
 import math
+import mathutils
+
 import numpy as np
 from collections import defaultdict
 from pathlib import Path
@@ -187,6 +189,8 @@ def create_and_assign_atlas_lightmap(influence_pct):
         rect_map[p['fi']] = (u0, v0, u1, v1, w, h)
 
     uv_data = lm_uv.data
+    verts = mesh.vertices
+
     for poly in mesh.polygons:
         fi = poly.index
         rect = rect_map.get(fi)
@@ -195,15 +199,47 @@ def create_and_assign_atlas_lightmap(influence_pct):
         u0, v0, u1, v1, pw, ph = rect
         loops_start = poly.loop_start
         loops_total = poly.loop_total
-        if loops_total == 3:
-            local_uvs = [(0.0,0.0),(1.0,0.0),(0.0,1.0)]
-        elif loops_total == 4:
-            local_uvs = [(0.0,0.0),(1.0,0.0),(1.0,1.0),(0.0,1.0)]
+
+        # Build per-loop vertex 2D coordinates in polygon-local 2D space.
+        # Use the polygon's vertex coordinates projected onto the polygon plane.
+        # Compute a local 2D basis (u_axis, v_axis) on the poly normal.
+        poly_verts = [verts[idx].co for idx in poly.vertices]
+        # polygon center
+        center = sum(poly_verts, mathutils.Vector()) / len(poly_verts)
+        # get tangent axis: from first vertex to second
+        if len(poly_verts) >= 2:
+            tangent = (poly_verts[1] - poly_verts[0]).normalized()
         else:
-            local_uvs = []
-            for i in range(loops_total):
-                frac = i / max(1, loops_total-1)
-                local_uvs.append((frac, frac))
+            tangent = mathutils.Vector((1,0,0))
+        normal = poly.normal
+        bitangent = normal.cross(tangent).normalized()
+        tangent = tangent.normalized()
+
+        # compute 2D coords for each loop's vertex
+        loop_coords_2d = []
+        for vi in poly.vertices:
+            p = verts[vi].co
+            rel = p - center
+            x = rel.dot(tangent)
+            y = rel.dot(bitangent)
+            loop_coords_2d.append((x, y))
+
+        # find min/max in 2D to map to rectangle corners
+        xs = [c[0] for c in loop_coords_2d]
+        ys = [c[1] for c in loop_coords_2d]
+        xmin, xmax = min(xs), max(xs)
+        ymin, ymax = min(ys), max(ys)
+        xspan = xmax - xmin if xmax != xmin else 1e-6
+        yspan = ymax - ymin if ymax != ymin else 1e-6
+
+        # for each loop, compute normalized local (lx, ly) in [0,1]
+        local_uvs = []
+        for (x, y) in loop_coords_2d:
+            lx = (x - xmin) / xspan
+            ly = (y - ymin) / yspan
+            local_uvs.append((lx, ly))
+
+        # assign atlas UVs based on these local_uvs
         for li in range(loops_total):
             lu, lv = local_uvs[li]
             u = u0 + lu * (u1 - u0)
@@ -212,7 +248,6 @@ def create_and_assign_atlas_lightmap(influence_pct):
                 v = 1.0 - v
             uv_data[loops_start + li].uv = (u, v)
 
-    mesh.update()
 
     # Augment each existing base material node tree to multiply by atlas sample into Principled Base Color
     print("Adding lightmap material nodes...")
@@ -453,7 +488,7 @@ def create_materials():
 
             if not material_name in bpy.data.materials:
                 # Create the material
-                print(f"Creating material: {material_name}")
+                # print(f"Creating material: {material_name}")
                 mat = bpy.data.materials.new(name = material_name)
 
                 mat.use_nodes = True
@@ -476,7 +511,8 @@ def create_materials():
                 BSP_OBJECT.texture_material_index_dict[t.texture_name] = bpy.data.materials.find(material_name)
 
         except Exception as e:
-            print(f"ERROR creating material for texture: {t.texture_name}\n{e}")
+            print(f"ERROR creating material for texture: {t.texture_name}")
+            print("This can happen if the texture the material would have been created from is only used as an animation texture.")
             traceback.print_exc()
         else:
             # print(f"Material already exists for {t.texture_name}, skipping...")
@@ -488,17 +524,20 @@ def assign_materials():
 
     # for material in BSP_OBJECT.obj.data.materials:
     for face in BSP_OBJECT.mesh.polygons:
-        bsp_index = BSP_OBJECT.mesh.attributes["bsp_face_index"].data[face.index].value
+        try:
+            bsp_index = BSP_OBJECT.mesh.attributes["bsp_face_index"].data[face.index].value
 
-        texture_idx = BSP_OBJECT.faces[bsp_index].texture_info
-        texture_name = BSP_OBJECT.textures[texture_idx].texture_name
-        found_material_idx = BSP_OBJECT.texture_material_index_dict[texture_name]
+            texture_idx = BSP_OBJECT.faces[bsp_index].texture_info
+            texture_name = BSP_OBJECT.textures[texture_idx].texture_name
 
-        material = bpy.data.materials.get(f"M_{texture_name}")
-        slot_index = BSP_OBJECT.obj.data.materials[:].index(material)
+            material_name = f"M_{texture_name}"
+            material = bpy.data.materials.get(material_name)
+            slot_index = BSP_OBJECT.obj.data.materials[:].index(material)
 
-        BSP_OBJECT.obj.data.polygons[face.index].material_index = slot_index
-        # face.material_index = found_material_idx
+            BSP_OBJECT.obj.data.polygons[face.index].material_index = slot_index
+        except Exception as e:
+            print(f"ERROR assigning material {material_name}, BSP INDEX: {bsp_index}\n{e}")
+            traceback.print_exc()
 
 
 def create_uvs(model_scale):
