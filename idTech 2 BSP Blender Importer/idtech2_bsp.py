@@ -512,7 +512,6 @@ def create_materials():
 
         except Exception as e:
             print(f"ERROR creating material for texture: {t.texture_name}")
-            print("This can happen if the texture the material would have been created from is only used as an animation texture.")
             traceback.print_exc()
         else:
             # print(f"Material already exists for {t.texture_name}, skipping...")
@@ -522,7 +521,6 @@ def create_materials():
 def assign_materials():
     bpy.context.tool_settings.mesh_select_mode = [False, False, True]
 
-    # for material in BSP_OBJECT.obj.data.materials:
     for face in BSP_OBJECT.mesh.polygons:
         try:
             bsp_index = BSP_OBJECT.mesh.attributes["bsp_face_index"].data[face.index].value
@@ -537,7 +535,7 @@ def assign_materials():
             BSP_OBJECT.obj.data.polygons[face.index].material_index = slot_index
         except Exception as e:
             print(f"ERROR assigning material {material_name}, BSP INDEX: {bsp_index}\n{e}")
-            traceback.print_exc()
+            print("This can happen if the texture the material would have been created from is only used as an animation texture.")
 
 
 def create_uvs(model_scale):
@@ -568,12 +566,8 @@ def create_uvs(model_scale):
             bsp_u = x * texture.u_axis[0] + y * texture.u_axis[1] + z * texture.u_axis[2] + texture.u_offset
             bsp_v = x * texture.v_axis[0] + y * texture.v_axis[1] + z * texture.v_axis[2] + texture.v_offset
 
-            # bsp_u = (x * model_scale) * texture.u_axis[0] + (y * model_scale) * texture.u_axis[1] + (z * model_scale) * texture.u_axis[2] + texture.u_offset
-            # bsp_v = (x * model_scale) * texture.v_axis[0] + (y * model_scale) * texture.v_axis[1] + (z * model_scale) * texture.v_axis[2] + texture.v_offset
-
             try:
                 texture_res = BSP_OBJECT.texture_resolution_dict[texture.texture_name]
-
                 if not texture_res:
                     print(f"ERROR:  No resolution found for {texture.texture_name}")
 
