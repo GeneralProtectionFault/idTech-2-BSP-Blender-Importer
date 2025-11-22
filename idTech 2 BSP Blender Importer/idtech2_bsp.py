@@ -2,6 +2,7 @@ import bpy
 from dataclasses import dataclass, fields
 import struct
 import os
+import io
 import math
 import mathutils
 
@@ -84,7 +85,6 @@ def build_all_face_lightmaps_in_memory(file_bytes):
         BSP_OBJECT.lightmap_images.append({'fi': fi, 'img': img, 'w': img.width, 'h': img.height})
 
     print(f"Built {len(BSP_OBJECT.lightmap_images)} in-memory face lightmaps")
-    # return BSP_OBJECT.lightmap_images
 
 
 def create_and_assign_atlas_lightmap(influence_pct):
@@ -445,11 +445,18 @@ def load_textures(bytes):
     for t in BSP_OBJECT.textures:
         if t.next_texinfo != -1:
             BSP_OBJECT.animation_textures.append(t.next_texinfo)
-            print(f"This texture: {t}")
             print(f"Adding animation texture to list: {t.next_texinfo}")
 
 
-def collect_nonfirst_linked_per_sequence():
+def get_nonfirst_animation_textures():
+    """
+    This method finds animation textures EXCEPT the first in the sequence for material creation.
+    The subsequent "non-first" textures would apply to the same face as the first texture.
+    We want to create a material from the first texture, but we don't want to create a material for all the
+    animation textures on the same face.
+
+    So, this returns the non-first textures to exclude from material creation.
+    """
     result = []
     in_sequence = False
     for i, tex in enumerate(BSP_OBJECT.textures):
@@ -465,13 +472,11 @@ def collect_nonfirst_linked_per_sequence():
 
 
 def create_materials():
-    # distinct_texture_names = {tex.texture_name for tex in BSP_OBJECT.textures}
-    excluded_animation_texture_indices = collect_nonfirst_linked_per_sequence()
+    excluded_animation_texture_indices = get_nonfirst_animation_textures()
     # print(f"EXCLUDED ANIMATION TEXTURES: {excluded_animation_texture_indices}")
 
-    unique_material_names = list({f"M_{tex.texture_name}" for tex in BSP_OBJECT.textures})
-
     # If importing multiple times, axe the old material, which will still exist globally, even if the object was deleted.
+    unique_material_names = list({f"M_{tex.texture_name}" for tex in BSP_OBJECT.textures})
     for material_name in unique_material_names:
         if material_name in bpy.data.materials:
             material = bpy.data.materials[material_name]
@@ -487,10 +492,7 @@ def create_materials():
             material_name = f"M_{t.texture_name}"
 
             if not material_name in bpy.data.materials:
-                # Create the material
-                # print(f"Creating material: {material_name}")
                 mat = bpy.data.materials.new(name = material_name)
-
                 mat.use_nodes = True
                 # Create the shader node
                 bsdf = mat.node_tree.nodes['Principled BSDF']
@@ -500,15 +502,17 @@ def create_materials():
                 else:
                     bsdf.inputs['Specular IOR Level'].default_value = 0
 
-                # Create the texture image node
                 tex_image = mat.node_tree.nodes.new('ShaderNodeTexImage')
-                tex_image.image = bpy.data.images.load(BSP_OBJECT.texture_path_dict[t.texture_name])
+                tex_image.image = BSP_OBJECT.texture_obj_dict.get(t.texture_name)
+                
                 mat.node_tree.links.new(tex_image.outputs['Color'], bsdf.inputs['Base Color'])
 
                 # Add the new material to the mesh/object
                 BSP_OBJECT.obj.data.materials.append(mat)
+            else:
+                mat = bpy.data.materials.get(material_name)
 
-                BSP_OBJECT.texture_material_index_dict[t.texture_name] = bpy.data.materials.find(material_name)
+            BSP_OBJECT.texture_material_index_dict[t.texture_name] = bpy.data.materials.find(material_name)
 
         except Exception as e:
             print(f"ERROR creating material for texture: {t.texture_name}")
@@ -545,8 +549,6 @@ def create_uvs(model_scale):
     uv_layer = BSP_OBJECT.mesh.uv_layers.new()
     BSP_OBJECT.mesh.uv_layers.active = uv_layer
 
-    # Hopefully only non-image files that match the name of supposed textures...
-    skipped_textures = dict()
     bpy.ops.object.mode_set(mode='OBJECT')
 
     for face in BSP_OBJECT.mesh.polygons:
@@ -577,8 +579,6 @@ def create_uvs(model_scale):
                 uv_layer.data[loop_idx].uv = [u,v]
             except Exception as e:
                 print(f"Skipping {texture.texture_name} (may be .atd file or non-image)\n{e}")
-                if texture.texture_name not in skipped_textures.keys():
-                    skipped_textures[texture.texture_name] = f"{e}\n{e.__traceback__.tb_frame.f_code.co_filename}\n{e.__traceback__.tb_lineno}" + f"\nUV1: {u1,v1}"
                 continue
 
 
@@ -603,51 +603,85 @@ def get_texture_images(search_from_parent):
     file_paths_map = {file_path.casefold(): file_path for file_path in file_paths}
 
     for i, t in enumerate(BSP_OBJECT.textures):
-        # texture_base_path = os.path.join(BSP_OBJECT.folder_path, *t.texture_name.split('/'))
-        # potential_texture_paths = [f"{texture_base_path}{ext}" for ext in valid_extensions]
-        # actual_texture_path = getfile_insensitive_from_list(potential_texture_paths)
-
         texture_name_casefold = t.texture_name.casefold()
+        actual_texture_path = ""
         for casefolded_path, original_path in file_paths_map.items():
             if texture_name_casefold.replace('\\','/') in casefolded_path.replace('\\','/'):
                 actual_texture_path = original_path
-                break  # Stop checking other paths for this texture
+                break
 
-        if not actual_texture_path == "":
-            # Get resolution of texture
-            try:
-                final_texture_path = ''
-                # if actual_texture_path.endswith('.pcx'):
-                #     print(f".PCX image: {actual_texture_path}")
-                if actual_texture_path.endswith('.wal'):
-                    wal_object = wal_image(actual_texture_path)
-                    with wal_object.image as img:
-                        if not t.texture_name in BSP_OBJECT.texture_resolution_dict:
-                            BSP_OBJECT.texture_resolution_dict[t.texture_name] = (wal_object.width, wal_object.height)
+        try:
+            if not actual_texture_path:
+                print(f"ERROR: {t.texture_name}, index {i} not found (actual_texture_path blank)")
+                continue
 
-                        # Need to write a normal image because even if we can parse it, blender won't load a .wal as a texture
-                        base_texture_path, _ = os.path.splitext(actual_texture_path)
-                        new_texture_path = base_texture_path + ".png"
+            # Use the exact naming you want for the blender image datablock
+            image_name = f"{t.texture_name}"
 
-                        # if not os.path.exists(new_texture_path):
-                        print(f".WAL image, writing .PNG copy for Blender: {new_texture_path}")
-                        img.save(new_texture_path)
-                        final_texture_path = new_texture_path
+            # If an image datablock with that name already exists, reuse it
+            existing_img = bpy.data.images.get(image_name)
+            if existing_img:
+                BSP_OBJECT.texture_obj_dict[t.texture_name] = existing_img
+                # ensure resolution recorded
+                if t.texture_name not in BSP_OBJECT.texture_resolution_dict:
+                    BSP_OBJECT.texture_resolution_dict[t.texture_name] = (existing_img.size[0], existing_img.size[1])
+                continue
 
-                else:
-                    final_texture_path = actual_texture_path
-                    with PIL.Image.open(final_texture_path) as img:
-                        if not t.texture_name in BSP_OBJECT.texture_resolution_dict:
-                            BSP_OBJECT.texture_resolution_dict[t.texture_name] = img.size # x, y
-            except Exception as e:
-                # print(f"Unable to open texture file (may be .atd, etc...): {t.texture_name}")
-                print(f"ERROR getting {t.texture_name}, attempted path: {final_texture_path}")
-                print(f'Exception: {e}')
+            # Not already created: create/load now
+            if actual_texture_path.lower().endswith('.wal'):
+                wal_object = wal_image(actual_texture_path)
+                with wal_object.image as pil_img:
+                    new_image = pil_img.convert('RGBA')
+                    pixels = np.array(new_image).astype(np.float32) / 255.0
 
-            BSP_OBJECT.texture_path_dict[t.texture_name] = final_texture_path
-            # print(f"Actual path: {actual_texture_path} ----- Final path: {final_texture_path}")
-        else:
-            print(f"ERROR: {t.texture_name}, index {i} not found (actual_texture_path blank)")
+                    if t.texture_name not in BSP_OBJECT.texture_resolution_dict:
+                        BSP_OBJECT.texture_resolution_dict[t.texture_name] = (wal_object.width, wal_object.height)
+
+                    png_bytes_io = io.BytesIO()
+                    new_image.save(png_bytes_io, format='PNG')
+                    png_bytes = png_bytes_io.getvalue()
+
+                    blender_img = bpy.data.images.new(name=image_name,
+                                                    width=wal_object.width,
+                                                    height=wal_object.height)
+
+                    blender_img.pixels.foreach_set(pixels.ravel())
+                    blender_img.pack()
+
+            else:
+                # Non-WAL: attempt to load from disk
+                try:
+                    blender_img = bpy.data.images.load(actual_texture_path)
+                    # rename to your desired image_name if that name isn't taken
+                    if blender_img.name != image_name and not bpy.data.images.get(image_name):
+                        blender_img.name = image_name
+                except Exception:
+                    # PIL fallback: create new image datablock with your name
+                    with PIL.Image.open(actual_texture_path) as pil_img:
+                        width, height = pil_img.size
+                        if t.texture_name not in BSP_OBJECT.texture_resolution_dict:
+                            BSP_OBJECT.texture_resolution_dict[t.texture_name] = (width, height)
+
+                        blender_img = bpy.data.images.new(name=image_name,
+                                                        width=width,
+                                                        height=height,
+                                                        alpha=pil_img.mode in ('RGBA', 'LA'))
+                        pil_rgba = pil_img.convert('RGBA')
+                        pixels = list(pil_rgba.getdata())
+                        float_pixels = [chan / 255.0 for px in pixels for chan in px]
+                        blender_img.pixels[:] = float_pixels
+
+            # store the created image datablock
+            BSP_OBJECT.texture_obj_dict[t.texture_name] = blender_img
+
+            # ensure resolution stored for non-wal loaded images
+            if t.texture_name not in BSP_OBJECT.texture_resolution_dict:
+                BSP_OBJECT.texture_resolution_dict[t.texture_name] = (blender_img.size[0], blender_img.size[1])
+
+        except Exception as e:
+            print(f"ERROR getting {t.texture_name}, attempted path: {actual_texture_path}")
+            print(f"Exception: {e}")
+
 
 
 def load_idtech2_bsp(bsp_path, model_scale, apply_transforms, search_from_parent, apply_lightmaps, lightmap_influence, show_entities):

@@ -1,23 +1,10 @@
 import os
 import glob
 import math
+from PIL import Image
 
 
-def split_path_all_parts(path):
-    parts = []
-    while True:
-        head, tail = os.path.split(path)
-        if head == path:  # Absolute path
-            parts.append(head)
-            break
-        elif tail:
-            parts.append(tail)
-            path = head
-        else:
-            parts.append(head)
-            break
-    parts.reverse()
-    return parts
+import hashlib
 
 
 def getfile_insensitive_from_list(potential_paths):

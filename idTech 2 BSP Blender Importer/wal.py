@@ -4,11 +4,13 @@ import struct
 import numpy as np
 from PIL import Image
 from pathlib import Path
+import io
 
 # quake2_colormap = Path.cwd() / Path('quake2.lmp')     # Testing
 
 ADDON_DIR = Path(__file__).parent
 quake2_colormap = ADDON_DIR / "quake2.lmp"
+
 
 @dataclass
 class wal_image(object):
@@ -70,12 +72,14 @@ class wal_image(object):
 
 
 if __name__ == "__main__":
-    wal_path = '/home/q/Documents/quake2_test/textures/e3u2/sflr1_1.wal'
+    wal_path = '/home/q/Documents/quake2_test/textures/e1u1/color1_2.wal'
     wal_object = wal_image(wal_path)
 
     print("--------------- .WAL HEADER VALUES -------------------")
     for field in fields(wal_object):
         print(f"{field.name} - ", getattr(wal_object, field.name))
     print("------------------------------------------------------")
+    print(f"Image Mode: {wal_object.image.mode}")
 
     wal_object.image.show()
+    # wal_object.image.save("/home/q/Documents/BlenderCode/idTech 2 BSP Blender Importer/output.png", format="PNG")

@@ -210,7 +210,7 @@ class BSP_OBJECT(object):
     face_verts_list = list()
     bsp_face_indices = list()
 
-    texture_path_dict = dict()
+    texture_obj_dict = dict()
     material_texture_dict = dict()
     texture_material_index_dict = dict()
     texture_resolution_dict = dict()
@@ -232,7 +232,7 @@ class BSP_OBJECT(object):
         cls.textures = []
         cls.face_verts_list = []
         cls.bsp_face_indices = []
-        cls.texture_path_dict = {}
+        cls.texture_obj_dict = {}
         cls.material_texture_dict = {}
         cls.texture_material_index_dict = {}
         cls.texture_resolution_dict = {}
