@@ -1,80 +1,10 @@
-bl_info = {
-    "name": "idTech 2 BSP Importer",
-    "author": "GeneralProtectionFault",
-    "version": (1,4,0),
-    "blender": (3,6,0),
-    "location": "File > Import > idTech 2 Quake II/Anachronox (.BSP)",
-    "warning": "",
-    "github_url": "https://github.com/GeneralProtectionFault/idTech-2-BSP-Blender-Importer",
-    "category": "Import-Export"
-}
-
-
 from bpy_extras.io_utils import ImportHelper
 from bpy.props import BoolProperty, StringProperty, IntProperty
 import bpy
 import os
 import sys
 import platform
-import subprocess
 import stat
-from importlib import reload # required when a self-written module is imported that's edited simultaneously
-
-
-REQUIRED_PACKAGES = ["PIL"]  # pillow is imported as PIL
-
-def is_module_available(mod_name):
-    try:
-        importlib.import_module(mod_name)
-        return True
-    except Exception:
-        return False
-
-# If all packages present, skip installation entirely
-missing = [p for p in REQUIRED_PACKAGES if not is_module_available(p)]
-if not missing:
-    # nothing to do
-    pass
-else:
-    # find python executable inside Blender's sys.prefix/bin
-    if platform.system() == "Linux":
-        python_bin_folder = os.path.join(sys.prefix, "bin")
-        full_python_path = None
-        executable = stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH
-        if os.path.isdir(python_bin_folder):
-            for filename in os.listdir(python_bin_folder):
-                candidate = os.path.join(python_bin_folder, filename)
-                if os.path.isfile(candidate):
-                    st = os.stat(candidate)
-                    mode = st.st_mode
-                    if (mode & executable) and "python" in filename:
-                        full_python_path = candidate
-                        break
-        # fallback to sys.executable if nothing found
-        python_exe = full_python_path or sys.executable
-    else:
-        # On Windows sys.prefix/bin/python.exe may not exist; prefer sys.executable
-        python_exe = os.path.join(sys.prefix, "bin", "python.exe")
-        if not os.path.isfile(python_exe):
-            python_exe = sys.executable
-
-    try:
-        # ensure pip is available; ensurepip can be no-op if already installed
-        subprocess.call([python_exe, "-m", "ensurepip"])
-        # optionally upgrade pip if desired (commented out because it may conflict with Blender env)
-        # subprocess.call([python_exe, "-m", "pip", "install", "--upgrade", "pip"])
-    except Exception as e:
-        print(f"Issue ensuring/upgrading pip:\n{e}")
-
-    # install only the missing packages
-    for pkg in missing:
-        try:
-            # install pillow (package name is 'Pillow' on pip; import name is 'PIL')
-            pip_name = "Pillow" if pkg == "PIL" else pkg
-            subprocess.call([python_exe, "-m", "pip", "install", pip_name])
-        except Exception as e:
-            print(f"ERROR: {pkg} failed to install\n{e}")
-
 
 from .idtech2_bsp import load_idtech2_bsp
 
