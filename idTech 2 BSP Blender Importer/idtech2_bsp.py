@@ -144,25 +144,28 @@ def create_and_assign_atlas_lightmap(influence_pct):
 
     # Save single atlas to disk (allowed) and load into Blender
     atlas_name = f"{BSP_OBJECT.name}_atlas"
-    BSP_OBJECT.lightmap_folder = BSP_OBJECT.lightmap_folder or (Path(BSP_OBJECT.folder_path) / Path(f'{BSP_OBJECT.name}_bsp_lightmaps'))
-    BSP_OBJECT.lightmap_folder.mkdir(parents=True, exist_ok=True)
-    atlas_path = Path(BSP_OBJECT.lightmap_folder) / f"{atlas_name}.png"
 
-    print(f"SAVING: {atlas_path}")
-    atlas_img_pil.save(str(atlas_path), format='PNG')
+    atlas_bytes_io = io.BytesIO()
+    atlas_img_pil.save(atlas_bytes_io, format='PNG')
 
-    atlas_bpy = None
-    try:
-        atlas_bpy = bpy.data.images.load(str(atlas_path), check_existing=True)
-        atlas_bpy.name = atlas_name
-    except Exception as e:
-        print(f"Failed to load atlas image into Blender: {e}")
-        return
+    width, height = atlas_img_pil.size
+    BSP_OBJECT.lightmap_atlas = bpy.data.images.new(atlas_name, width=width, height=height, alpha=True)
 
-    atlas_bpy.colorspace_settings.name = 'Non-Color'    # Multiply action needs to be linear, lightmap represents intensity, not actual "color"
+    # Convert PIL image to RGBA, normalize pixel values (0-255 → 0.0-1.0), and flatten
+    pixels = list(atlas_img_pil.convert('RGBA').getdata())
+    pixels = [chan / 255.0 for pixel in pixels for chan in pixel]
+
+    # Assign pixels to the Blender image
+    BSP_OBJECT.lightmap_atlas.pixels = pixels
+
+    # Pack the image to embed it in the .blend file
+    BSP_OBJECT.lightmap_atlas.pack()
+
+    # Multiply action needs to be linear, lightmap represents intensity, not actual "color"
+    BSP_OBJECT.lightmap_atlas.colorspace_settings.name = 'Non-Color'
     if use_closest_for_debug:
         try:
-            atlas_bpy.use_alpha = True
+            BSP_OBJECT.lightmap_atlas.use_alpha = True
         except:
             pass
 
@@ -281,7 +284,7 @@ def create_and_assign_atlas_lightmap(influence_pct):
 
         atlas_tex = nodes.new('ShaderNodeTexImage')
         atlas_tex.name = "LM_Atlas_Tex"
-        atlas_tex.image = atlas_bpy
+        atlas_tex.image = BSP_OBJECT.lightmap_atlas
         atlas_tex.extension = 'CLIP'
         if use_closest_for_debug:
             try:
@@ -327,7 +330,7 @@ def create_and_assign_atlas_lightmap(influence_pct):
 
         links.new(mix_node.outputs['Color'], base_color_input)
 
-    print(f"Built lightmap atlas ({atlas_w_real}x{atlas_h_real}), applied LightmapUV and patched materials. Atlas image: {atlas_bpy.name}")
+    print(f"Built lightmap atlas ({atlas_w_real}x{atlas_h_real}), applied LightmapUV and patched materials. Atlas image: {BSP_OBJECT.lightmap_atlas.name}")
 
 
 def load_header(bytes):
@@ -504,7 +507,7 @@ def create_materials():
 
                 tex_image = mat.node_tree.nodes.new('ShaderNodeTexImage')
                 tex_image.image = BSP_OBJECT.texture_obj_dict.get(t.texture_name)
-                
+
                 mat.node_tree.links.new(tex_image.outputs['Color'], bsdf.inputs['Base Color'])
 
                 # Add the new material to the mesh/object

@@ -216,8 +216,8 @@ class BSP_OBJECT(object):
     texture_resolution_dict = dict()
 
     animation_textures = list()
-    lightmap_folder = Path()
     lightmap_images = list()
+    lightmap_atlas = {}
 
     @classmethod
     def reset(cls):
@@ -237,5 +237,5 @@ class BSP_OBJECT(object):
         cls.texture_material_index_dict = {}
         cls.texture_resolution_dict = {}
         cls.animation_textures = []
-        cls.lightmap_folder = Path()
         cls.lightmap_images = []
+        cls.lightmap_atlas = {}
