@@ -28,8 +28,8 @@ the textures folder is at the same level as the one w/ the .BSPs.  Because of th
 an option has been added to search all files within the *parent* of the folder containing the loaded .BSP file:
 ![image](https://github.com/user-attachments/assets/58c1dd41-a194-403b-8e96-45c304041be5)
 
-Also, because Blender will not recognize a .WAL file, the addon will parse .WAL files and write a .PNG file in the same folder.
-Be aware of this if you want to keep the folder clean, etc... or a copy can be made.  
+Also, because Blender will not recognize a .WAL file, the addon will convert the image and pack it into the scene.
+If there's any desire to save the image, it will be in .PNG format.
 
 ## BSP Structure Diagram
 Please note this is almost certainly not perfect, and is almost certainly missing some information regarding brushes/leaves/etc... which are not necessary for 
