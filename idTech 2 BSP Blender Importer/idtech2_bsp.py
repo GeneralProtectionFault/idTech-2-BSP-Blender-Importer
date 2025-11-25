@@ -142,21 +142,27 @@ def create_and_assign_atlas_lightmap(influence_pct):
         paste_y = p['y'] + pad
         atlas_img_pil.paste(p['img'], (paste_x, paste_y), p['img'])
 
+    if atlas_img_pil.mode != 'RGBA':
+        atlas_img = atlas_img_pil.convert('RGBA')
+    else:
+        atlas_img = atlas_img_pil
+
+    # PIL uses top-left origin, Blender uses bottom-left
+    atlas_img_flipped = atlas_img_pil.transpose(Image.FLIP_TOP_BOTTOM)
+
+    w, h = atlas_img_flipped.size
+    rgba_bytes = atlas_img_flipped.tobytes()  # raw bytes in RGBA order
+
     # Save single atlas to disk (allowed) and load into Blender
     atlas_name = f"{BSP_OBJECT.name}_atlas"
 
-    atlas_bytes_io = io.BytesIO()
-    atlas_img_pil.save(atlas_bytes_io, format='PNG')
+    BSP_OBJECT.lightmap_atlas = bpy.data.images.new(atlas_name, width=w, height=h, alpha=True, float_buffer=False)
 
-    width, height = atlas_img_pil.size
-    BSP_OBJECT.lightmap_atlas = bpy.data.images.new(atlas_name, width=width, height=height, alpha=True)
-
-    # Convert PIL image to RGBA, normalize pixel values (0-255 → 0.0-1.0), and flatten
-    pixels = list(atlas_img_pil.convert('RGBA').getdata())
-    pixels = [chan / 255.0 for pixel in pixels for chan in pixel]
-
-    # Assign pixels to the Blender image
-    BSP_OBJECT.lightmap_atlas.pixels = pixels
+    # Blender expects a flattened sequence of floats (0..1) or bytes depending on pixel access.
+    # Use pixels (floats). Convert bytes (0..255) to floats (0..1).
+    # pixels is a flat array of length w*h*4 in RGBA order.
+    pixels = [c / 255.0 for c in rgba_bytes]  # produces a list of floats
+    BSP_OBJECT.lightmap_atlas.pixels[:] = pixels  # assign all pixels at once
 
     # Pack the image to embed it in the .blend file
     BSP_OBJECT.lightmap_atlas.pack()
@@ -591,9 +597,12 @@ def get_texture_images(search_from_parent):
 
     # For Quake/Quake II, the default folder layout often places the .BSP files in a folder adjacent the textures,
     # instead of in a subfolder.  This option allows searching from the parent folder to find those textures.
-    texture_search_folder = BSP_OBJECT.folder_path
-    if search_from_parent:
+    if search_from_parent == 0:
+        texture_search_folder = BSP_OBJECT.folder_path
+    elif search_from_parent == 1:
         texture_search_folder = Path(BSP_OBJECT.folder_path).parent
+    elif search_from_parent == 2:
+        texture_search_folder = Path(BSP_OBJECT.folder_path).parent.parent
 
     print(f"Searching for appropriate texture image files in: {texture_search_folder}")
     actual_texture_path = ""
@@ -634,7 +643,7 @@ def get_texture_images(search_from_parent):
             if actual_texture_path.lower().endswith('.wal'):
                 wal_object = wal_image(actual_texture_path)
                 with wal_object.image as pil_img:
-                    new_image = pil_img.convert('RGBA')
+                    new_image = pil_img.convert('RGBA').transpose(Image.FLIP_TOP_BOTTOM)    # PIL: Upper-left origin, Blender: Lower-left origin
                     pixels = np.array(new_image).astype(np.float32) / 255.0
 
                     if t.texture_name not in BSP_OBJECT.texture_resolution_dict:

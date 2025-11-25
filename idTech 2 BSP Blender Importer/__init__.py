@@ -9,6 +9,14 @@ import stat
 from .idtech2_bsp import load_idtech2_bsp
 
 
+def draw_hr(layout, height=0.05, px=3):
+    box = layout.box()
+    row = box.row()
+    row.scale_y = max(height, px * height)  # scale fallback for small px
+    row.alignment = 'EXPAND'
+    row.label(text="")
+
+
 class ImportBSP(bpy.types.Operator, ImportHelper):
     bl_idname = "import_idtech2.bsp"
     bl_label = "Import idtech 2 BSP"
@@ -19,18 +27,42 @@ class ImportBSP(bpy.types.Operator, ImportHelper):
         maxlen=255,  # Max internal buffer length, longer would be clamped.
     )
 
+    def draw(self, context):
+        layout = self.layout
+        layout.separator()
+
+        layout.prop(self, "model_scale", text="Model Scale")
+        layout.prop(self, "apply_transforms", text="Apply Transforms")
+
+        draw_hr(layout)
+
+        layout.prop(self, "apply_lightmaps")
+        layout.prop(self, "lightmap_influence", text="Lightmap Influence (%)")
+
+        draw_hr(layout)
+
+        layout.label(text="(Quake II) Search parent folders for textures")
+        layout.prop(self, "search_from_parent", text="Parent Levels")
+
+        draw_hr(layout)
+
+        layout.label(text="Create Empties to show BSP Entities")
+        layout.prop(self, "show_entities", text="Show Entities")
+
+
+
     model_scale: bpy.props.FloatProperty(name="New Model Scale",
                                     description='Desired scale for the model.\nDefault is 1%, as idTech 2 did not consider vertex coordinates "meters" :)',
-                                    default=.01)
+                                    precision=4, default=.0254)
 
     apply_transforms: BoolProperty(name="Apply transforms",
                                         description="Applies the previous transforms.",
                                         default=True)
 
-    search_from_parent: BoolProperty(name="Search for textures from parent folder",
+    search_from_parent: IntProperty(name="Search for textures from parent folder",
                                         description="""In a typical Quake game folder, a .BSP file may refer to textures in a textures folder not within itself.
                                         In this case, all files under the PARENT folder from the .BSP will be searched.""",
-                                        default=False)
+                                        min=0, max=2, default=0)
 
     apply_lightmaps: BoolProperty(name="Apply Lightmaps", default=False)
 
