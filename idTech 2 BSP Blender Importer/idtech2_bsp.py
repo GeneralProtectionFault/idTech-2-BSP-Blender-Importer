@@ -287,11 +287,13 @@ def create_and_assign_atlas_lightmap(influence_pct):
         uv_map_node = nodes.new('ShaderNodeUVMap')
         uv_map_node.name = "LM_UVMap"
         uv_map_node.uv_map = lm_uv_name
+        uv_map_node.location = (-824, -273)
 
         atlas_tex = nodes.new('ShaderNodeTexImage')
         atlas_tex.name = "LM_Atlas_Tex"
         atlas_tex.image = BSP_OBJECT.lightmap_atlas
         atlas_tex.extension = 'CLIP'
+        atlas_tex.location = (-617, -52)
         if use_closest_for_debug:
             try:
                 atlas_tex.interpolation = 'Closest'
@@ -302,11 +304,13 @@ def create_and_assign_atlas_lightmap(influence_pct):
         mix_node.name = "LM_Multiply"
         mix_node.blend_type = 'MULTIPLY'
         mix_node.inputs['Fac'].default_value = 1.0
+        mix_node.location = (-277, 110)
 
         marker = nodes.new('ShaderNodeValue')
         marker.name = "Lightmap_Infuence"
         marker.label = "Lightmap Influence"
         marker.outputs[0].default_value = 1.0 * influence_pct
+        marker.location = (-486, 407)
 
         links.new(marker.outputs[0], mix_node.inputs['Fac'])
 
@@ -502,17 +506,20 @@ def create_materials():
 
             if not material_name in bpy.data.materials:
                 mat = bpy.data.materials.new(name = material_name)
-                mat.use_nodes = True
+                if bpy.app.version < (5, 0, 0):
+                    mat.use_nodes = True
+
                 # Create the shader node
                 bsdf = mat.node_tree.nodes['Principled BSDF']
-
-                if (bpy.app.version < (4,0,0)):
-                    bsdf.inputs['Specular'].default_value = 0
-                else:
-                    bsdf.inputs['Specular IOR Level'].default_value = 0
+                bsdf.inputs['Specular IOR Level'].default_value = 0
 
                 tex_image = mat.node_tree.nodes.new('ShaderNodeTexImage')
                 tex_image.image = BSP_OBJECT.texture_obj_dict.get(t.texture_name)
+
+                # Set the node locations so they don't dog-pile each other
+                bsdf.location = (-83, 130)
+                tex_image.location = (-617, 248)
+                mat.node_tree.nodes['Material Output'].location = (213, 155)
 
                 mat.node_tree.links.new(tex_image.outputs['Color'], bsdf.inputs['Base Color'])
 
