@@ -142,12 +142,15 @@ def parse_bsp_entities(text):
 
 
 def populate_entities(bytes, scale):
+    """
+    "Main" method called from importer
+    """
     entity_text = get_entity_text(bytes)
     entities = parse_bsp_entities(entity_text)
 
     coll = get_or_create_collection(f"{BSP_OBJECT.name}_Entities")
 
-    for entity in entities:
+    for idx, entity in enumerate(entities):
         if "origin" in entity.keys():      # Only create entityes when we have a location to do so
             this_empty_text = ""
             for i, (key, value) in enumerate(entity.items()):
@@ -158,3 +161,10 @@ def populate_entities(bytes, scale):
                     # print(f"X, Y, Z: {x,y,z}")
             if x and y and z:
                 create_empty((x,y,z), this_empty_text, f"Empty_{i}", f"Text_{i}", coll)
+        # If there's no origin (location) to place it at, add a custom property to the object
+        else:
+            string_custom_property = ""
+            for i, (key, value) in enumerate(entity.items()):
+                string_custom_property += f"{key}: {value}\n"
+
+            BSP_OBJECT.obj.data[f"ENTITY_{idx}"] = string_custom_property
