@@ -2,10 +2,12 @@
 This addon is to import .BSP files directly into Blender.
 Tested with Anachronox, and Quake II.
 
-Video explaining use of addon:  https://youtu.be/1dLkg9RjBr0
+Video explaining use of addon:  
+https://youtu.be/1dLkg9RjBr0
 
 ### Textures
 <img width="304" height="289" alt="image" src="https://github.com/user-attachments/assets/0c2f48e4-1f52-46bb-bc6a-51b154af5cf8" />
+
 The "Parent Levels" is for searching for the textures, *which you need to have extracted/available for the BSP version used by idTech 2 (Quake II).*
 BE CAREFUL with this parent search if you change the setting.  It will recursively search EVERYTHING either in the folder of the BSP file you choose (set to 0), or 1 - 2 parent folders.
 So, if you set this outside your intended folder, it will hang Blender while it searches everything.
