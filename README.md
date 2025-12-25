@@ -1,17 +1,42 @@
 # idTech 2 BSP Blender Importer
 This addon is to import .BSP files directly into Blender.
-Tested with Anachronox, but format should be the same as Quake II.
+Tested with Anachronox, and Quake II.
 
-A first attempt at incorporating lightmaps (optional - check box on import to activate).
-I suspect it isn't quite right because while some maps look decent, others are too black, etc...
-It's also not always desirable to use them if you're going to do lighting elsewhere.  However,
-there is a lightmap influence option to adjust the "weight" of them.  In some cases, this makes sense,
-such as the effect being significant enough to affect the color--but applying them fully would
-be too much.
+Video explaining use of addon:  https://youtu.be/1dLkg9RjBr0
 
-Currently, addon will simply search all the files with appropriate extensions within the working directory,
-so make sure all textures that the .BSP file needs/refers to are somewhere within the folder the .BSP file 
-was opened from.
+### Textures
+<img width="304" height="289" alt="image" src="https://github.com/user-attachments/assets/0c2f48e4-1f52-46bb-bc6a-51b154af5cf8" />
+The "Parent Levels" is for searching for the textures, *which you need to have extracted/available for the BSP version used by idTech 2 (Quake II).*
+BE CAREFUL with this parent search if you change the setting.  It will recursively search EVERYTHING either in the folder of the BSP file you choose (set to 0), or 1 - 2 parent folders.
+So, if you set this outside your intended folder, it will hang Blender while it searches everything.
+
+Quake II has BSPs in the game directory within subfolders.  However, the BSP files and textures you will extract from the PAK
+files will need to be shared among those.  I recommend extracting to the main game folder, and then if you need to find the textures
+for a map like "chaos," which is in a folder *within* the main game folder, you set the parent search to get to that main directory.
+
+#### Alternative to texture search headache
+If you prefer (and you very well may), simply extrct the PAK files containing the textures and BSPs all into one separate folder.
+If you do this, note that there are some BSPs *not in the PAK files*, already in the game folder you'll want to copy in there as well.
+But, once you've copied everything to that folder, just leave the "Parent Levels" setting to 0, and it will find all the textures.
+Just make sure you leave the little subfolders that come out of the PAK files (like e1u1, e1u2, etc...)...as they are part of the path
+that is referenced in the BSP files.  Ergo, remove those, the addon won't find them.  However, this way, everything is searching "down" and 
+no need to figure out how many folders up you have to search.
+
+This parent search option is potentially more trouble than it's worth, but it was a (limited success? :-P) attempt to limit the need to understand
+this file structure stuff to import the model.
+
+### Optional Lightmaps
+Also in the aboe screenshot, the lightmaps options are indicated.  These models start at full brightness, and lightmaps are included in a lump of the file
+(literally just an unbroken byte lump of RGB values).  These will be parsed and a large atlas texture will be created, comprised of all the lightmaps.
+A few things to be aware of with these...  As the original game engine would usually have varying amounts of lighting at runtime, applying these fully
+can have varying results, such as being way too dark if there was a lot of lighting.  Conversely, they can also affect the color of the textures.
+TLDR, in some cases, it makes sense to apply them, but not others, and still others, you may want them, but not at full influence.
+This is the purpose for the lightmap influence slider.  It will be a material setting that affects a mix shader to tweak the influence as desired.
+One other thing is that Blender will default to linear interpolation of pixels.  This can give the look of a sort of subtle "border" on some faces, so this isn't perfect.
+We can turn the interpolation off by setting the interpolation in the image node to "Closest," but this isn't how the original game engine would have handled it either,
+as this creates a stark, pixelated separation.
+
+As an aside, this effect is amplified because the lightmaps have 1 pixel for every 16x16 pixels of the mesh face they apply to (lighting was not required at pixel level).
 
 This addon does not (yet, at least) attempt to import models and/or entities referred to by the .BSP file.
 There is currently an option to add en empty for each entity that has an orign/location to put it at, to at least show the information.
@@ -25,24 +50,7 @@ Support has been added for .wal images, commonly used in Quake II.
 These, along with other files, need to be extracted from the Quake II PAK files.
 This tool will make that easy: https://github.com/GeneralProtectionFault/PAKExtract
 
-When these PAK files are extracted, the result is typically the .BSP files in one folder, and instead of the textures being in child folders,
-the textures folder is at the same level as the folder w/ the .BSPs.  Because of this,and how the addon searches for all acceptable image files,
-an option has been added to search all files within the *parent* of the folder containing the loaded .BSP file:
-<img width="1105" height="703" alt="image" src="https://github.com/user-attachments/assets/152803cd-a008-425c-a083-895b44e14194" />
-
-BE CAREFUL WITH THIS OPTION.  It's designed to facilitate finding texture images in the original folder structure, but if you search a "parent" folder
-that goes outside your game directory, you'll potentially hang Blender for a while as it tries to find all the textures in however large/nested a folder it was pointed to.
-
-For games like Anachronox, in which the textures are typically within the same folder, leave this at 0.
-For Quake II (extracting from the .PAK while preserving the folder structure), this would typically be set to 1 or 2, depending on the .BSP being imported.
-There is a "maps" folder in the main directory, and other levels have specific folders, like chaos/maps, for example.
-If extracting the .PAK files, there's a "textures" folder.  Assuming that's in the main directory, both situations refer to this textures folder.
-Ergo, in the first example, set the Parent Levels to 1, in the second example, set it to 2.
-Naturally, if you set the folders up yourself, this doesn't apply.  This is a somewhat icky attempt to handle the "natural" folder structure.
-
-
-Also, because Blender will not recognize a .WAL file, the addon will convert the image and pack it into the scene.
-If there's any desire to save the image, it will be in .PNG format.
+Note that Blender does not support .WAL files.  The addon will convert the image to PNG and pack it into the scene.
 
 ## BSP Structure Diagram
 Please note this is almost certainly not perfect, and is almost certainly missing some information regarding brushes/leaves/etc... which are not necessary for 
