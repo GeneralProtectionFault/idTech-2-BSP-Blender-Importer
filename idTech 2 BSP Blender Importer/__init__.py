@@ -52,7 +52,7 @@ class ImportBSP(bpy.types.Operator, ImportHelper):
 
 
     model_scale: bpy.props.FloatProperty(name="New Model Scale",
-                                    description='Desired scale for the model.\nDefault is 1%, as idTech 2 did not consider vertex coordinates "meters" :)',
+                                    description='Desired scale for the model.\nDefault is 2.54%, as idTech 2 did not consider vertex coordinates "meters" :)',
                                     precision=4, default=.0254)
 
     apply_transforms: BoolProperty(name="Apply transforms",
@@ -60,7 +60,8 @@ class ImportBSP(bpy.types.Operator, ImportHelper):
                                         default=True)
 
     search_from_parent: IntProperty(name="Search for textures from parent folder",
-                                        description="""In a typical Quake game folder, a .BSP file may refer to textures in a textures folder not within itself.
+                                        description="""CAREFUL - setting this to a folder outside your game folder may result in a long search/Blender hang.
+                                        In a typical Quake game folder, a .BSP file may refer to textures in a textures folder not within itself.
                                         In this case, all files under the PARENT folder from the .BSP will be searched.""",
                                         min=0, max=2, default=0)
 
@@ -71,8 +72,8 @@ class ImportBSP(bpy.types.Operator, ImportHelper):
                                         node which can be adjusted between 0 and 1 at any time.""",
                                         min=0, max=100, default=100)
 
-    show_entities: BoolProperty(name="Show Entity Info", description="""If an entity has an origin/location, an empty object will be created, along with text 
-                                        for the properties""", default=False)
+    show_entities: BoolProperty(name="Show Entity Info", description="""If an entity has an origin/location, an empty object will be created, along with text
+                                        for the properties.  If there is no location, an OBJECT custom property will be created for each entity.""", default=False)
 
     def execute(self, context):
         try:

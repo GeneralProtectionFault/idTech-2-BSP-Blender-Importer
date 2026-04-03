@@ -594,7 +594,7 @@ def create_uvs(model_scale):
 
                 uv_layer.data[loop_idx].uv = [u,v]
             except Exception as e:
-                print(f"Skipping {texture.texture_name} (may be .atd file or non-image)\n{e}")
+                print(f"Skipping {texture.texture_name} (may be .atd file or non-image - OR the image was not found!)\n{e}")
                 continue
 
 
